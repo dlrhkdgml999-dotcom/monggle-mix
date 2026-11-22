@@ -263,7 +263,7 @@ export class UI {
   }
   showZone(z) {
     const e = $('#zoneName');
-    e.textContent = z ? z.name : '';
+    e.innerHTML = z ? z.name + (z.lv ? `<small>Lv ${z.lv[0]}~${z.lv[1]}</small>` : '') : '';
     e.classList.remove('show'); void e.offsetWidth;
     if (z) e.classList.add('show');
   }

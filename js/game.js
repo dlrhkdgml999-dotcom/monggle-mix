@@ -283,6 +283,7 @@ export class Game {
   attack(u, t) {
     u.face = Math.atan2(t.model.root.position.x - u.model.root.position.x, t.model.root.position.z - u.model.root.position.z);
     u.lunge = 0.25;
+    if (u.kind === 'hero') u.swing = 0.3;
     if (u.range > 3) {
       const col = u.elems[0] === 'fire' ? 0xff9a4d : u.elems[0] === 'water' ? 0x6cc4ff : 0xa6e36a;
       this.shoot(u, t, 1, col);
@@ -674,6 +675,10 @@ export class Game {
     m.body.scale.set(sx * bs, sy * bs, sx * bs);
     if (u.sp === 'ggulbeol' || u.sp === 'gimmung') m.body.position.y += 0.15 + Math.sin(t * 3) * 0.06;
     m.body.traverse(o => { if (o.userData.wing) o.rotation.y = Math.sin(t * 30) * 0.5 * o.userData.wing; if (o.userData.puff) o.position.y = o.userData.puff + ((t * 0.4) % 0.3); });
+    if (u.kind === 'hero') {
+      const w = m.body.children.find(o => o.userData.wand);
+      if (w) { if (u.swing > 0) { u.swing -= dt; w.rotation.x = 0.5 - Math.sin((0.3 - u.swing) / 0.3 * Math.PI) * 1.6; } else w.rotation.x = 0.5 + Math.sin(t * 2.6) * 0.05; }
+    }
     if (u.hurtT > 0) { u.hurtT -= dt; m.flash(true); if (u.hurtT <= 0) m.flash(false); }
     m.shadow.scale.setScalar(1 - y * 0.6);
   }

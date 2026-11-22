@@ -34,11 +34,17 @@ export class Net {
     const { ref, set, onValue, onDisconnect, serverTimestamp } = this.M;
     this.meRef = ref(this.db, 'presence/' + this.uid);
     this.state = state;
+    this.writePresence = () => set(this.meRef, {
+      name: state.name, look: state.look, mic: this.mic, t: serverTimestamp(), party: this.partyList(),
+      ...(this.lx != null ? { x: this.lx, z: this.lz } : {}), lv: state.lv,
+    }).catch(() => {});
     onValue(ref(this.db, '.info/connected'), snap => {
       if (!snap.val()) return;
       onDisconnect(this.meRef).remove();
-      set(this.meRef, { name: state.name, look: state.look, mic: this.mic, t: serverTimestamp(), party: this.partyList() });
+      this.writePresence();
     });
+    // 혹시 접속 표시가 지워져도 15초마다 다시 켜기
+    setInterval(() => { if (!document.hidden) this.writePresence(); }, 15000);
     onValue(ref(this.db, 'presence'), snap => {
       const all = snap.val() || {};
       const next = {};

@@ -295,6 +295,14 @@ export function makeHero(look = 'boy') {
     body.add(cone(hair, 0.05, 1.42, 0, 0.05, 0.12));
   }
   face(body, 0.95, 0.31, 0.13);
+  // 별 요술봉 (오른손)
+  const wand = new THREE.Group();
+  wand.add(cyl(toon(0xc8955a), 0, 0.18, 0, 0.022, 0.36));
+  const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.1, 0), toon(0xffe066, { emissive: 0xffd84d, emissiveIntensity: 0.5 }));
+  star.position.y = 0.4; star.scale.set(1, 1, 0.5); wand.add(star);
+  wand.position.set(0.32, 0.22, 0.08); wand.rotation.x = 0.5;
+  wand.userData.wand = true;
+  body.add(wand);
   // 망토 대신 작은 가방
   body.add(ball(toon(0xc8955a), 0, 0.45, -0.22, 0.17, 0.18, 0.08));
   return finishModel(root, body);
