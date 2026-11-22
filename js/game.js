@@ -4,8 +4,11 @@ import { SPECIES, ZONES, elemMult, expToNext, MAX_LV, BOX_MAX, CAPTURE_RATE, CAP
 import { makeMonggle, makeHero, toon } from './models.js';
 import { clampToWorld, SPAWN, CAULDRON } from './world.js';
 import { sfx } from './sfx.js';
+import { animateModel, ATTACK_TIME } from './anim.js';
 
 const PART_GEO = new THREE.IcosahedronGeometry(0.07, 0);
+const GEM_GEO = new THREE.OctahedronGeometry(0.13, 0);
+const GEM_MAT = new THREE.MeshToonMaterial({ color: 0xfff27a, emissive: 0xffc93d, emissiveIntensity: 0.7 });
 
 const V = new THREE.Vector3();
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -273,7 +276,12 @@ export class Game {
   updateMirror(u, dt) {
     const p = u.model.root.position;
     if (u.dead) {
-      if (u.fadeT > 0) { u.fadeT -= dt; u.model.root.scale.setScalar(Math.max(0.01, u.fadeT)); if (u.fadeT <= 0) u.model.root.visible = false; }
+      if (u.fadeT > 0) {
+        u.fadeT -= dt;
+        u.model.root.rotation.z = Math.min(1.5, (1 - u.fadeT) * 4);
+        u.model.root.scale.setScalar(Math.max(0.01, u.fadeT < 0.4 ? u.fadeT / 0.4 : 1));
+        if (u.fadeT <= 0) u.model.root.visible = false;
+      }
       return;
     }
     const dx = u.tx - p.x, dz = u.tz - p.z, d = Math.hypot(dx, dz);
@@ -423,6 +431,10 @@ export class Game {
     }
     to.hp -= dmg;
     to.hurtT = 0.15;
+    if (!to.boss && from.model) {
+      const fp = from.model.root.position, tp = to.model.root.position, d = dist2(fp, tp) || 1;
+      tp.x += (tp.x - fp.x) / d * 0.12; tp.z += (tp.z - fp.z) / d * 0.12;
+    }
     if (!silent) this.ui.floatText(to.model.root.position, '-' + dmg, em > 1 ? 'big' : (to.kind === 'wild' ? 'hit' : 'ouch'));
     if (to.kind === 'wild') { sfx.hit(em > 1); this.burst(to.model.root.position, em > 1 ? 0xffe066 : 0xffffff, em > 1 ? 9 : 5); }
     else if (to.kind === 'hero') sfx.ouch();
@@ -431,6 +443,17 @@ export class Game {
     if (to.kind === 'pet' && !to.target) to.target = from;
     if (to.hp <= 0) this.kill(to, from);
     return dmg;
+  }
+
+  // 반짝가루 보석이 톡 튀어나왔다가 주인공에게 쏙
+  dropGems(p, n) {
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(GEM_GEO, GEM_MAT);
+      m.position.set(p.x, 0.5, p.z);
+      this.scene.add(m);
+      const a = Math.random() * Math.PI * 2, sp = rand(1.2, 2.6);
+      this.drops.push({ m, vx: Math.cos(a) * sp, vy: rand(4, 6), vz: Math.sin(a) * sp, t: 0, wait: 0.5 + i * 0.07 });
+    }
   }
 
   burst(p, color, n = 6) {
@@ -455,8 +478,7 @@ export class Game {
 
   attack(u, t) {
     u.face = Math.atan2(t.model.root.position.x - u.model.root.position.x, t.model.root.position.z - u.model.root.position.z);
-    u.lunge = 0.25;
-    if (u.kind === 'hero') u.swing = 0.3;
+    u.atkT = ATTACK_TIME;
     if (u.range > 3) {
       const col = u.elems[0] === 'fire' ? 0xff9a4d : u.elems[0] === 'water' ? 0x6cc4ff : 0xa6e36a;
       this.shoot(u, t, 1, col);
@@ -522,7 +544,7 @@ export class Game {
     const dust = 1 + Math.floor(Math.random() * 3) + Math.floor(u.lv / 6);
     this.state.dust += dust;
     this.state.kills = (this.state.kills || 0) + 1;
-    sfx.dust();
+    this.dropGems(u.model.root.position, Math.min(6, dust));
     this.ui.floatText(u.model.root.position, `✦${dust}`, 'dust', 0.4);
     this.gainHeroExp(exp);
     for (const p of this.units) if (p.kind === 'pet' && !p.dead) this.gainPetExp(p, exp);
@@ -562,6 +584,7 @@ export class Game {
   makeFriend(u) {
     u.kind = 'friend';
     u.dead = false;
+    u.fadeT = 0; u.model.root.rotation.z = 0; u.model.root.scale.setScalar(1); u.model.root.visible = true;
     u.friendT = 20; // 20초 안에 터치
     u.colorT = 0;
     u.bar?.classList.add('friend');
@@ -627,7 +650,7 @@ export class Game {
       } else if (sk.type === 'slow') { t.buffs.slow = sk.dur; this.shoot(u, t, sk.power, 0xffe066); }
     }
     u.skillCd = sk.cd;
-    u.lunge = 0.4;
+    u.atkT = ATTACK_TIME;
     if (sk.type === 'heal') sfx.heal(); else sfx.skill();
     this.ui.floatText(u.model.root.position, sk.name, 'skill', 0.9);
     return true;
@@ -679,6 +702,22 @@ export class Game {
         if (!p.to.dead && !p.to.removed) this.damage(p.from, p.to, p.mult);
         this.scene.remove(p.m); this.projectiles.splice(this.projectiles.indexOf(p), 1);
       } else p.m.position.addScaledVector(V.normalize(), Math.min(d, p.speed * dt));
+    }
+    // 반짝가루 보석
+    const hp1 = this.hero.model.root.position;
+    for (let i = this.drops.length - 1; i >= 0; i--) {
+      const q = this.drops[i]; q.t += dt;
+      q.m.rotation.y += dt * 6;
+      if (q.t < q.wait) {
+        q.vy -= 16 * dt;
+        q.m.position.x += q.vx * dt; q.m.position.z += q.vz * dt; q.m.position.y += q.vy * dt;
+        if (q.m.position.y < 0.15) { q.m.position.y = 0.15; q.vy = Math.abs(q.vy) * 0.4; q.vx *= 0.6; q.vz *= 0.6; }
+      } else {
+        V.set(hp1.x, 0.8, hp1.z).sub(q.m.position);
+        const d = V.length();
+        if (d < 0.35) { this.scene.remove(q.m); this.drops.splice(i, 1); sfx.dust(); continue; }
+        q.m.position.addScaledVector(V.normalize(), Math.min(d, (8 + q.t * 10) * dt));
+      }
     }
     // 파티클
     for (let i = this.parts.length - 1; i >= 0; i--) {
@@ -763,7 +802,7 @@ export class Game {
         .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
       if (hurt && dist2(hurt.model.root.position, u.model.root.position) < 6) {
         const h = Math.round(u.atk * 1.6); hurt.hp = Math.min(hurt.maxHp, hurt.hp + h);
-        this.ui.floatText(hurt.model.root.position, '+' + h, 'heal'); u.atkCd = 2.2; u.lunge = 0.2; return;
+        this.ui.floatText(hurt.model.root.position, '+' + h, 'heal'); u.atkCd = 2.2; u.atkT = ATTACK_TIME; return;
       }
     }
     // 체력이 낮으면 뒤로 빠짐
@@ -788,7 +827,13 @@ export class Game {
 
   updateWild(u, dt) {
     if (u.dead) {
-      if (u.fadeT > 0) { u.fadeT -= dt; u.model.root.scale.setScalar(Math.max(0.01, u.fadeT)); if (u.fadeT <= 0) u.model.root.visible = false; }
+      if (u.fadeT > 0) {
+        u.fadeT -= dt;
+        const k = 1 - u.fadeT;
+        u.model.root.rotation.z = Math.min(1.5, k * 4);           // 옆으로 꽈당
+        u.model.root.scale.setScalar(Math.max(0.01, u.fadeT < 0.4 ? u.fadeT / 0.4 : 1));
+        if (u.fadeT <= 0) u.model.root.visible = false;
+      }
       return;
     }
     u.atkCd -= dt;
@@ -835,29 +880,20 @@ export class Game {
   }
 
   animate(u, dt) {
-    const m = u.model, t = this.time + (u.model.root.id % 10);
+    const m = u.model, t = this.time + (u.model.root.id % 10) * 0.37;
     // 방향 부드럽게
     let df = u.face - m.root.rotation.y;
     df = Math.atan2(Math.sin(df), Math.cos(df));
     m.root.rotation.y += df * Math.min(1, dt * 10);
     if (u.dead && u.kind === 'hero') { m.root.rotation.z = Math.min(1.4, m.root.rotation.z + dt * 4); return; }
-    let y = 0, sx = 1, sy = 1;
-    if (u.moving) { const h = Math.abs(Math.sin(t * 11)); y = h * 0.22; sy = 1 + h * 0.08; sx = 1 - h * 0.04; }
-    else { const b = Math.sin(t * 2.6); sy = 1 + b * 0.04; sx = 1 - b * 0.025; }
-    if (u.kind === 'friend') { const h = Math.abs(Math.sin(t * 6)); y = h * 0.35; }
-    if (u.lunge > 0) { u.lunge -= dt; m.body.position.z = Math.sin(u.lunge * 12) * 0.25; } else m.body.position.z = 0;
-    m.body.position.y = y;
-    const bs = m.base ?? (m.base = m.body.scale.x);
-    m.body.scale.set(sx * bs, sy * bs, sx * bs);
-    if (u.sp === 'ggulbeol' || u.sp === 'gimmung') m.body.position.y += 0.15 + Math.sin(t * 3) * 0.06;
-    m.body.traverse(o => { if (o.userData.wing) o.rotation.y = Math.sin(t * 30) * 0.5 * o.userData.wing; if (o.userData.puff) o.position.y = o.userData.puff + ((t * 0.4) % 0.3); });
-    if (u.kind === 'hero') {
-      const w = m.body.children.find(o => o.userData.wand);
-      if (w) { if (u.swing > 0) { u.swing -= dt; w.rotation.x = 0.5 - Math.sin((0.3 - u.swing) / 0.3 * Math.PI) * 1.6; } else w.rotation.x = 0.5 + Math.sin(t * 2.6) * 0.05; }
-    }
+    if (u.atkT > 0) u.atkT -= dt;
     if (u.hurtT > 0) { u.hurtT -= dt; m.flash(true); if (u.hurtT <= 0) m.flash(false); }
-    m.shadow.scale.setScalar(1 - y * 0.6);
+    animateModel(m, {
+      t, moving: u.moving || u.kind === 'friend', atk: u.atkT, ranged: u.range > 3 && u.kind !== 'hero',
+      hurt: u.hurtT,
+    }, dt);
   }
+
 
   nearCauldron() { return dist2(this.hero.model.root.position, CAULDRON) < 4; }
 }

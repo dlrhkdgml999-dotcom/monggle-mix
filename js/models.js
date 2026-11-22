@@ -49,9 +49,10 @@ function face(g, y, z, spread = 0.17, s = 1) {
   const sp = (spread + 0.02) * s;
   for (const sx of [-1, 1]) {
     const e = ball(eye, sx * sp, y - 0.01 * s, z - 0.012, 0.062 * s, 0.07 * s, 0.035 * s);
-    e.castShadow = false; g.add(e);
-    g.add(ball(hi, sx * sp + 0.018 * s, y + 0.017 * s, z + 0.018, 0.02 * s, 0.022 * s, 0.01 * s));
-    g.add(ball(hi, sx * sp - 0.02 * s, y - 0.03 * s, z + 0.016, 0.009 * s, 0.009 * s, 0.006 * s));
+    e.castShadow = false; e.userData.eye = true; g.add(e);
+    const h1 = ball(hi, sx * sp + 0.018 * s, y + 0.017 * s, z + 0.018, 0.02 * s, 0.022 * s, 0.01 * s);
+    const h2 = ball(hi, sx * sp - 0.02 * s, y - 0.03 * s, z + 0.016, 0.009 * s, 0.009 * s, 0.006 * s);
+    h1.userData.eyeHi = h2.userData.eyeHi = true; g.add(h1, h2);
     const b = ball(bl, sx * (spread + 0.12) * s, y - 0.085 * s, z - 0.03, 0.072 * s, 0.04 * s, 0.03 * s);
     b.castShadow = false;
     g.add(b);
@@ -105,7 +106,7 @@ const BUILD = {
     const sp = toon(c.b);
     g.add(ball(sp, 0, 0.62, -0.12, 0.2, 0.06, 0.2)); // 호떡 무늬
     g.add(ball(sp, 0.2, 0.42, -0.3, 0.12, 0.05, 0.1));
-    const tail = cyl(body, 0, 0.35, -0.45, 0.05, 0.35); tail.rotation.x = -0.9; g.add(tail);
+    const tail = cyl(body, 0, 0.35, -0.45, 0.05, 0.35); tail.rotation.x = -0.9; tail.userData.tail = true; g.add(tail);
     face(g, 0.48, 0.37);
   },
   mulbang(g, c) { // 물방울 귀 토끼
@@ -175,7 +176,7 @@ const BUILD = {
       g.add(cone(toon(c.b), sx * 0.24, 0.95, 0.02, 0.06, 0.12));
       g.add(ball(body, sx * 0.2, 0.1, 0.16, 0.11, 0.09, 0.13));
     }
-    const tail = cyl(body, 0, 0.42, -0.48, 0.06, 0.4); tail.rotation.x = -0.7; g.add(tail);
+    const tail = cyl(body, 0, 0.42, -0.48, 0.06, 0.4); tail.rotation.x = -0.7; tail.userData.tail = true; g.add(tail);
     const fl = toon(c.b, { emissive: c.b, emissiveIntensity: 0.7 });
     g.add(ball(fl, 0, 0.66, -0.66, 0.14)); g.add(cone(fl, 0, 0.84, -0.68, 0.11, 0.3));
     face(g, 0.55, 0.39);
@@ -306,7 +307,7 @@ const BUILD = {
     }
     g.add(ball(body, 0, 0.92, 0.34, 0.3, 0.29, 0.26));
     for (const sx of [-1, 1]) g.add(ball(body, sx * 0.2, 1.16, 0.34, 0.07));
-    const tail = cyl(body, 0, 0.6, -0.62, 0.04, 0.4); tail.rotation.x = -0.6; g.add(tail);
+    const tail = cyl(body, 0, 0.6, -0.62, 0.04, 0.4); tail.rotation.x = -0.6; tail.userData.tail = true; g.add(tail);
     g.add(ball(mane, 0, 0.78, -0.78, 0.1));
     face(g, 0.94, 0.58, 0.12, 0.9);
   },
@@ -364,7 +365,8 @@ export function makeMonggle(sp, { shiny = false } = {}) {
   BUILD[sp](body, pal);
   const scale = { 1: 0.9, 2: 1.05, 3: 1.25 }[SPECIES[sp]?.stage] || 1;
   body.scale.setScalar(scale);
-  return finishModel(root, body);
+  const motion = MOTION.hop.includes(sp) ? 'hop' : MOTION.fly.includes(sp) ? 'fly' : 'walk';
+  return finishModel(root, body, motion);
 }
 
 
@@ -376,41 +378,105 @@ export function makeHero(look = 'boy') {
   const skin = toon(0xffe0c7);
   const hairC = look === 'girl' ? 0x6b3f2a : 0x2e2430;
   const clothC = look === 'girl' ? 0xff9fc5 : 0x7cb8ff;
-  const hair = toon(hairC), cloth = toon(clothC);
-  body.add(ball(cloth, 0, 0.42, 0, 0.26, 0.3, 0.22));        // 몸
-  { const k = cone(toon(0xffffff), 0, 0.56, 0.2, 0.07, 0.08); k.rotation.x = Math.PI / 2; body.add(k); }
+  const hair = toon(hairC), cloth = toon(clothC), pants = toon(0x5a4a6a);
+  const rig = { legs: [], arms: [] };
+  body.add(ball(cloth, 0, 0.44, 0, 0.26, 0.28, 0.22));         // 몸통
+  { const k = cone(toon(0xffffff), 0, 0.58, 0.2, 0.07, 0.08); k.rotation.x = Math.PI / 2; body.add(k); }
+  body.add(ball(toon(0xc8955a), 0, 0.46, -0.22, 0.17, 0.18, 0.08)); // 가방
   for (const sx of [-1, 1]) {
-    body.add(ball(cloth, sx * 0.28, 0.45, 0, 0.08, 0.16, 0.08)); // 팔
-    body.add(ball(skin, sx * 0.3, 0.3, 0.02, 0.065));
-    body.add(cyl(toon(0x5a4a6a), sx * 0.1, 0.1, 0, 0.07, 0.2)); // 다리
-    body.add(ball(toon(0x5a4a6a), sx * 0.1, 0.02, 0.04, 0.08, 0.05, 0.1));
+    // 다리: 엉덩이 관절
+    const hip = new THREE.Group(); hip.position.set(sx * 0.1, 0.24, 0);
+    hip.add(cyl(pants, 0, -0.11, 0, 0.07, 0.22));
+    hip.add(ball(pants, 0, -0.21, 0.04, 0.085, 0.05, 0.11));
+    hip.userData.ph = sx < 0 ? 0 : Math.PI;
+    body.add(hip); rig.legs.push(hip);
+    // 팔: 어깨 관절
+    const sh = new THREE.Group(); sh.position.set(sx * 0.27, 0.6, 0);
+    sh.add(ball(cloth, 0, -0.12, 0, 0.08, 0.15, 0.08));
+    sh.add(ball(skin, sx * 0.01, -0.27, 0.02, 0.065));
+    sh.rotation.z = sx * 0.12;
+    sh.userData.ph = sx < 0 ? Math.PI : 0; sh.userData.side = sx;
+    body.add(sh); rig.arms.push(sh);
+    if (sx > 0) {
+      // 별 요술봉 (오른손)
+      const wand = new THREE.Group();
+      wand.add(cyl(toon(0xc8955a), 0, 0.18, 0, 0.022, 0.36));
+      const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.1, 0), toon(0xffe066, { emissive: 0xffd84d, emissiveIntensity: 0.5 }));
+      star.position.y = 0.4; star.scale.set(1, 1, 0.5); wand.add(star);
+      wand.position.set(0.01, -0.3, 0.06); wand.rotation.x = 0.9;
+      sh.add(wand);
+      rig.wandArm = sh;
+    }
   }
-  body.add(ball(skin, 0, 0.98, 0, 0.37, 0.35, 0.34));        // 머리
-  body.add(ball(hair, 0, 1.12, -0.1, 0.39, 0.32, 0.32));     // 머리카락
-  const bang = ball(hair, 0, 1.2, 0.12, 0.33, 0.13, 0.2); bang.rotation.x = 0.25; body.add(bang); // 앞머리
+  // 머리: 목 관절
+  const head = new THREE.Group(); head.position.set(0, 0.72, 0);
+  head.add(ball(skin, 0, 0.26, 0, 0.37, 0.35, 0.34));
+  head.add(ball(hair, 0, 0.4, -0.1, 0.39, 0.32, 0.32));
+  const bang = ball(hair, 0, 0.48, 0.12, 0.33, 0.13, 0.2); bang.rotation.x = 0.25; head.add(bang);
   if (look === 'girl') {
-    for (const sx of [-1, 1]) body.add(ball(hair, sx * 0.34, 0.86, -0.08, 0.1, 0.2, 0.1));
+    for (const sx of [-1, 1]) { const tw = ball(hair, sx * 0.34, 0.14, -0.08, 0.1, 0.2, 0.1); tw.userData.ear = sx; head.add(tw); }
     const rib = toon(0xff5f8f);
-    for (const sx of [-1, 1]) body.add(ball(rib, sx * 0.09, 1.38, -0.02, 0.09, 0.06, 0.05));
-    body.add(ball(rib, 0, 1.38, -0.02, 0.04));
+    for (const sx of [-1, 1]) head.add(ball(rib, sx * 0.09, 0.66, -0.02, 0.09, 0.06, 0.05));
+    head.add(ball(rib, 0, 0.66, -0.02, 0.04));
   } else {
-    body.add(cone(hair, 0.05, 1.42, 0, 0.05, 0.12));
+    const ah = cone(hair, 0.05, 0.7, 0, 0.05, 0.12); ah.userData.ear = 1; head.add(ah);
   }
-  face(body, 0.95, 0.31, 0.13);
-  // 별 요술봉 (오른손)
-  const wand = new THREE.Group();
-  wand.add(cyl(toon(0xc8955a), 0, 0.18, 0, 0.022, 0.36));
-  const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.1, 0), toon(0xffe066, { emissive: 0xffd84d, emissiveIntensity: 0.5 }));
-  star.position.y = 0.4; star.scale.set(1, 1, 0.5); wand.add(star);
-  wand.position.set(0.32, 0.22, 0.08); wand.rotation.x = 0.5;
-  wand.userData.wand = true;
-  body.add(wand);
-  // 망토 대신 작은 가방
-  body.add(ball(toon(0xc8955a), 0, 0.45, -0.22, 0.17, 0.18, 0.08));
-  return finishModel(root, body);
+  face(head, 0.23, 0.31, 0.13);
+  body.add(head); rig.head = head;
+  const m = finishModel(root, body, 'hero');
+  Object.assign(m.rig, rig);
+  return m;
 }
 
-function finishModel(root, body) {
+const MOTION = {
+  hop: ['bulssi', 'hotteok', 'mulbang', 'saessak', 'jogae', 'iseul'],
+  fly: ['ggulbeol', 'gimmung', 'banjjak'],
+};
+function findRig(body) {
+  const rig = { legs: [], feet: [], tails: [], wings: [], ears: [], eyes: [], his: [], puffs: [] };
+  for (const o of [...body.children]) {
+    if (!o.isMesh) continue;
+    const t = o.geometry.type;
+    if (o.userData.tail) { rig.tails.push(o); o.userData.r0 = o.rotation.y; continue; }
+    if (o.userData.wing) { rig.wings.push(o); continue; }
+    if (o.userData.puff) { rig.puffs.push(o); continue; }
+    const ph = ((o.position.x < 0) !== (o.position.z < 0)) ? 0 : Math.PI;
+    // 땅에 닿는 원기둥 = 다리 → 위쪽을 관절로
+    if (t === 'CylinderGeometry' && o.position.y - o.scale.y / 2 < 0.06 && o.scale.y > 0.12 && Math.abs(o.position.x) > 0.04) {
+      const hip = new THREE.Group();
+      hip.position.set(o.position.x, o.position.y + o.scale.y / 2, o.position.z);
+      body.add(hip);
+      o.position.set(0, -o.scale.y / 2, 0);
+      hip.add(o);
+      hip.userData.ph = ph;
+      rig.legs.push(hip);
+      continue;
+    }
+    // 바닥 근처 작은 공 = 발
+    if (t === 'SphereGeometry' && o.position.y < 0.14 && o.scale.y < 0.13 && Math.abs(o.position.x) > 0.05) {
+      o.userData.ph = ph; o.userData.p0 = o.position.clone();
+      rig.feet.push(o);
+    }
+  }
+  // 다리 바로 밑에 붙은 발굽·발은 다리랑 같이 움직이게
+  for (const o of [...body.children]) {
+    if (!o.isMesh || o.position.y > 0.12) continue;
+    const hip = rig.legs.find(l => Math.abs(l.position.x - o.position.x) < 0.03 && Math.abs(l.position.z - o.position.z) < 0.03);
+    if (!hip) continue;
+    rig.feet = rig.feet.filter(f => f !== o);
+    o.position.set(0, o.position.y - hip.position.y, 0);
+    hip.add(o);
+  }
+  body.traverse(o => {
+    if (o.userData.eye) { rig.eyes.push(o); o.userData.sy = o.scale.y; }
+    if (o.userData.eyeHi) rig.his.push(o);
+    if (o.userData.ear) rig.ears.push(o);
+  });
+  return rig;
+}
+
+function finishModel(root, body, kind) {
+  const rig = findRig(body);
   const mats = new Set();
   root.traverse(o => { if (o.isMesh && o.material && o.material.color) mats.add(o.material); });
   const list = [...mats].map(m => ({ m, base: m.color.clone() }));
@@ -420,7 +486,7 @@ function finishModel(root, body) {
   sh.rotation.x = -Math.PI / 2; sh.position.y = 0.02;
   root.add(sh);
   return {
-    root, body, shadow: sh,
+    root, body, shadow: sh, rig, motion: kind || 'walk', blinkT: 1 + Math.random() * 3,
     // 0 = 회색(색 빠진 야생), 1 = 원래 색
     setColor(t) {
       for (const { m, base } of list) {

@@ -7,6 +7,7 @@ import { Net } from './net.js';
 import { Sync } from './sync.js';
 import { VERSION } from './version.js';
 import { makeHero, makeMonggle } from './models.js';
+import { animateModel } from './anim.js';
 import { unlock as unlockSound, sfx } from './sfx.js';
 import { newSave, loadLocal, save, checkLogin, pinLogin, loadCloud, normalize, currentUser, useProfileStorage, profileOfUser } from './save.js';
 
@@ -21,7 +22,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(38, 1, 0.5, 120);
+const camera = new THREE.PerspectiveCamera(30, 1, 0.5, 140);
 const hemi = new THREE.HemisphereLight(0xffffff, 0xa6d38f, 1.6);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff4e0, 1.9);
@@ -35,7 +36,7 @@ function resize() {
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   // 세로 화면이면 더 멀리서
-  camera.fov = w > h ? 38 : 55;
+  camera.fov = w > h ? 30 : 46;
   camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize); resize();
@@ -195,8 +196,7 @@ function updatePartner(dt) {
     partner.model.root.rotation.y = p.face ?? Math.atan2(dx, dz);
   }
   partner.t += dt;
-  const hop = d > 0.1 ? Math.abs(Math.sin(partner.t * 11)) * 0.2 : 0;
-  partner.model.body.position.y = hop;
+  animateModel(partner.model, { t: partner.t, moving: d > 0.08 }, dt);
   const n = partner.pets.length, face = partner.model.root.rotation.y;
   if (p.pets) {
     // 같이 사냥 중: 상대 몽글이의 실제 위치
@@ -207,7 +207,7 @@ function updatePartner(dt) {
       q.model.root.visible = !src[6];
       if (qd > 8) qp.set(src[3], 0, src[4]); else { qp.x += qx * Math.min(1, dt * 10); qp.z += qz * Math.min(1, dt * 10); }
       q.model.root.rotation.y = src[5];
-      q.model.body.position.y = src[7] ? Math.abs(Math.sin(q.t * 11)) * 0.2 : 0;
+      animateModel(q.model, { t: q.t, moving: !!src[7] }, dt);
     });
     return;
   }
@@ -217,8 +217,8 @@ function updatePartner(dt) {
     const qp = q.model.root.position, qx = tx - qp.x, qz = tz - qp.z, qd = Math.hypot(qx, qz);
     q.t += dt;
     if (qd > 12) qp.set(tx, 0, tz);
-    else if (qd > 0.4) { const st = Math.min(qd, 6 * dt); qp.x += qx / qd * st; qp.z += qz / qd * st; q.model.root.rotation.y = Math.atan2(qx, qz); q.model.body.position.y = Math.abs(Math.sin(q.t * 11)) * 0.2; }
-    else q.model.body.position.y = 0;
+    else if (qd > 0.4) { const st = Math.min(qd, 6 * dt); qp.x += qx / qd * st; qp.z += qz / qd * st; q.model.root.rotation.y = Math.atan2(qx, qz); }
+    animateModel(q.model, { t: q.t, moving: qd > 0.4 }, dt);
   }
 }
 
@@ -235,7 +235,7 @@ function loop() {
     game.update(dt);
     const hp = game.hero.model.root.position;
     const wide = innerWidth > innerHeight;
-    const off = wide ? new THREE.Vector3(0, 10.5, 12.5) : new THREE.Vector3(0, 15, 16);
+    const off = wide ? new THREE.Vector3(0, 14.2, 14.2) : new THREE.Vector3(0, 18, 18);
     camPos.lerp(off.add(hp), Math.min(1, dt * 5));
     camera.position.copy(camPos);
     look3.lerp(new THREE.Vector3(hp.x, 0.6, hp.z), Math.min(1, dt * 6));
