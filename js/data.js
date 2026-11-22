@@ -113,3 +113,16 @@ export const ZONES = [
 
 export const CAPTURE_RATE = 0.10;      // 기획서 기본 확률
 export const CAPTURE_RATE_NEW = 0.25;  // 도감에 없는 몽글이는 조금 더 잘 잡힘
+
+// 처음 하는 사람을 위한 할 일 (차례대로)
+export const QUESTS = [
+  { text: '말랑 들판으로 가 보기', to: { x: 26, z: 5 }, done: (s, g) => g.lastZone?.id === 'field' },
+  { text: '야생 몽글이 3마리 쓰러뜨리기', count: s => [Math.min(3, s.kills || 0), 3], done: s => (s.kills || 0) >= 3 },
+  { text: '새 친구 사귀기 (쓰러뜨리면 가끔 친구가 돼요)', done: s => s.monggles.length >= 3 || Object.keys(s.dex).length >= 3 },
+  { text: '몽글이 한 마리를 Lv10까지 키우기', count: s => [Math.min(10, Math.max(...s.monggles.map(m => m.lv))), 10], done: s => s.monggles.some(m => m.lv >= 10) },
+  { text: '믹스 솥에서 두 마리 섞어 보기', to: { x: 0, z: 1 }, done: s => (s.mixes || 0) >= 1 },
+  { text: '물방울 호숫가에서 물 몽글이 만나기', to: { x: 6, z: -32 }, done: s => s.dex.mulbang || s.dex.jogae },
+  { text: '대왕버섯 물리치기 (들판 동쪽 끝)', to: 'boss', done: s => (s.bossKills || 0) >= 1 },
+  { text: '도감 12칸 모두 채우기', count: s => [Object.keys(s.dex).length, 12], done: s => Object.keys(s.dex).length >= 12 },
+];
+export const QUEST_REWARD = 10;

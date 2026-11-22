@@ -1,6 +1,6 @@
 // 몽글믹스 — 게임 핵심 (주인공·몽글이·야생 몽글이·전투·포획)
 import * as THREE from '../lib/three.min.js';
-import { SPECIES, ZONES, elemMult, expToNext, MAX_LV, BOX_MAX, CAPTURE_RATE, CAPTURE_RATE_NEW } from './data.js';
+import { SPECIES, ZONES, elemMult, expToNext, MAX_LV, BOX_MAX, CAPTURE_RATE, CAPTURE_RATE_NEW, QUESTS, QUEST_REWARD } from './data.js';
 import { makeMonggle, makeHero, toon } from './models.js';
 import { clampToWorld, SPAWN, CAULDRON } from './world.js';
 import { sfx } from './sfx.js';
@@ -29,6 +29,8 @@ export class Game {
     this.heroSkillCd = 0;
     this.lastZone = null;
     this.marker = this.makeMarker();
+    this.arrow = this.makeArrow();
+    this.questT = 0;
     this.spawnHero();
     this.syncParty();
     for (const z of ZONES) if (z.spawns) for (let i = 0; i < z.count; i++) this.spawnWild(z);
@@ -43,6 +45,35 @@ export class Game {
       new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
     m.rotation.x = -Math.PI / 2; m.position.y = 0.06; this.scene.add(m);
     return m;
+  }
+
+  makeArrow() {
+    const g = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.55, 3), new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.9 }));
+    m.rotation.x = Math.PI / 2; g.add(m);
+    g.visible = false; this.scene.add(g);
+    return g;
+  }
+
+  // 할 일 진행 확인
+  checkQuest() {
+    const s = this.state;
+    s.quest = s.quest || 0;
+    while (s.quest < QUESTS.length && QUESTS[s.quest].done(s, this)) {
+      s.quest++;
+      s.dust += QUEST_REWARD;
+      this.ui.toast(`✅ 할 일 완료! 반짝가루 ${QUEST_REWARD}개`);
+      sfx.cheer();
+      this.ui.renderTop(); this.ui.save();
+    }
+    this.ui.renderQuest();
+  }
+
+  questTarget() {
+    const q = QUESTS[this.state.quest || 0];
+    if (!q || !q.to) return null;
+    if (q.to === 'boss') return this.boss && !this.boss.removed && !this.boss.dead ? this.boss.model.root.position : { x: 50, z: 12 };
+    return q.to;
   }
 
   addUnit(u) {
@@ -315,6 +346,7 @@ export class Game {
     const exp = Math.round(6 + u.lv * 3.5);
     const dust = 1 + Math.floor(Math.random() * 3) + Math.floor(u.lv / 6);
     this.state.dust += dust;
+    this.state.kills = (this.state.kills || 0) + 1;
     sfx.dust();
     this.ui.floatText(u.model.root.position, `✦${dust}`, 'dust', 0.4);
     this.gainHeroExp(exp);
@@ -479,6 +511,16 @@ export class Game {
       q.m.scale.setScalar(Math.max(0.01, q.t * 2.2));
       if (q.t <= 0) { this.scene.remove(q.m); this.parts.splice(i, 1); }
     }
+    // 할 일 화살표
+    this.questT -= dt;
+    if (this.questT <= 0) { this.questT = 0.5; this.checkQuest(); }
+    const qt = this.questTarget(), hp0 = this.hero.model.root.position;
+    if (qt && Math.hypot(qt.x - hp0.x, qt.z - hp0.z) > 6 && !this.hero.dead) {
+      const a = Math.atan2(qt.x - hp0.x, qt.z - hp0.z);
+      this.arrow.visible = true;
+      this.arrow.position.set(hp0.x + Math.sin(a) * 1.7, 0.25 + Math.sin(this.time * 5) * 0.06, hp0.z + Math.cos(a) * 1.7);
+      this.arrow.rotation.y = a;
+    } else this.arrow.visible = false;
     // 표시
     if (this.marker.material.opacity > 0) { this.marker.material.opacity -= dt * 1.5; this.marker.scale.multiplyScalar(1 + dt * 0.8); }
   }

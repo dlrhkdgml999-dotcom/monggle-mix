@@ -34,6 +34,7 @@ button { font-family: inherit; color: inherit; border: 0; cursor: pointer; }
 .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
 .pad button { height: 44px; border-radius: 14px; background: #f4eefc; font-size: 22px; box-shadow: 0 3px 0 #ddd0f2; }
 .pad button:active { transform: translateY(2px); box-shadow: 0 1px 0 #ddd0f2; background: #e8dcff; }
+.link.reset { display: block; margin: 10px auto 0; font-size: 12px; opacity: .7; }
 .link { background: none; color: var(--soft); font-size: 13px; text-decoration: underline; padding: 2px; }
 .btn { background: linear-gradient(180deg, #c7a6ff, #9f78ff); color: #fff; font-size: 17px; padding: 10px 16px; border-radius: 16px;
   box-shadow: 0 4px 0 #7a56d6; transition: transform .08s; }
@@ -69,6 +70,12 @@ button { font-family: inherit; color: inherit; border: 0; cursor: pointer; }
 .pcard > div { flex: 1; }
 .pcard.empty { justify-content: center; color: var(--soft); height: 44px; border: 2px dashed #ddd0f2; background: rgba(255,255,255,.5); }
 .pcard.down { filter: grayscale(1); opacity: .6; }
+#quest { position: absolute; left: calc(10px + var(--safe-l)); top: 200px; width: 170px; display: flex; gap: 6px; align-items: flex-start; background: rgba(255, 249, 220, .9);
+  border-radius: 14px; padding: 6px 10px; font-size: 12.5px; box-shadow: 0 3px 10px rgba(90, 60, 130, .12); pointer-events: none; }
+#quest span { font-size: 18px; }
+#quest b { font-size: 11px; color: #c48a00; }
+#quest p { margin: 1px 0 0; line-height: 1.25; }
+#quest em { font-style: normal; color: #7a56d6; }
 #topRight { position: absolute; right: calc(10px + var(--safe-r)); top: 10px; display: flex; gap: 8px; align-items: center; }
 .pill { background: var(--card); border-radius: 99px; padding: 6px 12px; font-size: 15px; box-shadow: 0 3px 10px rgba(90, 60, 130, .12); display: flex; align-items: center; gap: 6px; }
 #dust b { color: #d9a400; }
@@ -199,6 +206,7 @@ button { font-family: inherit; color: inherit; border: 0; cursor: pointer; }
 @media (max-height: 420px) {
   #me { width: 150px; padding: 6px 10px; }
   #party { top: 74px; }
+  #quest { top: 178px; width: 150px; }
   .pcard { width: 136px; }
   .skill { width: 58px; height: 58px; border-radius: 16px; }
   .skill img { width: 34px; height: 34px; }

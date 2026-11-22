@@ -1,8 +1,9 @@
 // 몽글믹스 — 화면 UI (상단 정보, 스킬 버튼, 가방, 도감, 믹스 솥)
 import * as THREE from '../lib/three.min.js';
-import { SPECIES, ELEM, DEX_ORDER, mixResult, MIX_COST, MIX_MIN_LV, BOX_MAX, expToNext, MAX_LV } from './data.js';
+import { SPECIES, ELEM, DEX_ORDER, mixResult, MIX_COST, MIX_MIN_LV, BOX_MAX, expToNext, MAX_LV, QUESTS } from './data.js';
 import { makeMonggle } from './models.js';
 import { sfx, isMuted, setMuted } from './sfx.js';
+import { newSave } from './save.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
@@ -56,6 +57,7 @@ export class UI {
         <div class="bar xp"><i id="meXp"></i></div>
       </div>
       <div id="party"></div>
+      <div id="quest" class="hidden"></div>
       <div id="topRight">
         <div id="dust" class="pill">✦ <b>0</b></div>
         <div id="online" class="pill off"><i class="dot"></i><span>혼자 노는 중</span></div>
@@ -124,6 +126,17 @@ export class UI {
       box.appendChild(c);
     }
     this.renderSkills();
+  }
+
+  renderQuest() {
+    const s = this.state, q = QUESTS[s.quest || 0], el = $('#quest');
+    if (!q) { el.classList.add('hidden'); return; }
+    const c = q.count ? q.count(s) : null;
+    const html = `<span>📜</span><div><b>할 일</b><p>${q.text}${c ? ` <em>${c[0]}/${c[1]}</em>` : ''}</p></div>`;
+    if (el.dataset.h !== html) { el.innerHTML = html; el.dataset.h = html; }
+    el.classList.remove('hidden');
+    const pt = $('#party');
+    el.style.top = (pt.offsetTop + pt.offsetHeight + 6) + 'px';
   }
 
   renderSkills() {
@@ -326,7 +339,25 @@ export class UI {
     grid.innerHTML = s.monggles.map(m => this.monCard(m)).join('');
     b.appendChild(grid);
     b.appendChild(h('p', 'hint', '몽글이를 누르면 자세히 보고, 데리고 다닐지 정할 수 있어요.'));
+    const rs = h('button', 'link reset', '처음부터 다시 하기');
+    rs.onclick = () => this.confirmReset();
+    b.appendChild(rs);
     grid.onclick = e => { const c = e.target.closest('.mcard'); if (c) this.openMon(+c.dataset.id); };
+  }
+
+  confirmReset() {
+    const b = this.openPanel('처음부터 다시 할까요?');
+    b.insertAdjacentHTML('beforeend', `<p class="hint">레벨, 몽글이, 반짝가루, 도감이 모두 처음으로 돌아가요. 되돌릴 수 없어요.</p>
+      <div class="btns center"><button class="btn" id="rsYes">네, 처음부터</button><button class="btn ghost" id="rsNo">아니요</button></div>`);
+    $('#rsNo', b).onclick = () => this.openBox();
+    $('#rsYes', b).onclick = () => {
+      const s = this.state, fresh = newSave(s.name, s.look);
+      for (const k of Object.keys(s)) delete s[k];
+      Object.assign(s, fresh);
+      this.save();
+      setTimeout(() => location.reload(), 2200); // 클라우드 저장이 끝난 뒤 새로고침
+      b.innerHTML = '<h2>새로 시작하는 중…</h2>';
+    };
   }
 
   openMon(id) {
@@ -427,6 +458,7 @@ export class UI {
     const m = { id: s.nextId++, sp: res, lv: 1, exp: 0, shiny, inh: inheritFrom.sp !== res ? inheritFrom.sp : undefined };
     if (!m.inh) delete m.inh;
     s.dust -= MIX_COST;
+    s.mixes = (s.mixes || 0) + 1;
     s.monggles = s.monggles.filter(x => x !== a && x !== c);
     s.party = s.party.filter(id => id !== a.id && id !== c.id);
     s.monggles.push(m);
