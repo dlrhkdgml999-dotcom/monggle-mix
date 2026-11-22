@@ -312,3 +312,29 @@ button { font-family: inherit; color: inherit; border: 0; cursor: pointer; }
 
 .ubar.npc { width: 120px; margin-left: -60px; }
 .ubar.npc .nm { background: rgba(122, 86, 214, .85); color: #fff; border-radius: 10px; padding: 2px 8px; font-size: 12px; text-shadow: none; }
+
+/* 🧬 물려받은 기술 (스킬 버튼 구석) */
+.skill .inh { position: absolute; right: 2px; top: 2px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(90, 60, 130, .3); opacity: .45; filter: grayscale(.7); transition: opacity .2s; pointer-events: none; }
+.skill .inh img { width: 22px; height: 22px; }
+.skill .inh.ready { opacity: 1; filter: none; box-shadow: 0 0 0 2px #ff9ecb; }
+.kv small.auto { display: block; font-size: 11px; color: var(--soft); font-weight: normal; }
+
+/* 💞 둘이 섞기 */
+.tabs .nb { background: #ff5f8f; color: #fff; border-radius: 8px; padding: 0 6px; font-size: 11px; }
+.btn.love { background: linear-gradient(180deg, #ffb3cf, #ff6f9f); box-shadow: 0 4px 0 #d94f7f; }
+.slot.partner { border-style: solid; border-color: #ffc2d8; background: #fff5f9; font-size: 14px; color: #d9608f; text-align: center; }
+.slot.res.love { border-color: #ff8fb4; background: #fff0f6; color: #d9608f; font-size: 16px; text-align: center; }
+.mcard .lock.love { background: #ffd6e6; color: #c2456f; }
+.asks { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.ask { display: flex; align-items: center; gap: 10px; background: #fff5f9; border: 2px solid #ffc2d8; border-radius: 16px; padding: 6px 10px; text-align: left; }
+.ask img { width: 56px; height: 56px; flex: none; }
+.ask > div { flex: 1; font-size: 14px; }
+.ask .gmsg { font-size: 14px; margin: 2px 0 0; }
+.ask .hint { text-align: left; margin: 2px 0 0; font-size: 12px; }
+.ask.mine { background: #f8f3ff; border-color: #ddd0f2; }
+.hint.center { text-align: center; }
+.love-intro { text-align: center; padding: 10px 20px; }
+.love-intro .hearts, .brew .hearts { font-size: 54px; animation: wobble .6s infinite; }
+.brew.love { flex-direction: column; align-items: center; }
+.brew.love .hearts { margin-top: -20px; }
+.born.love img { filter: drop-shadow(0 0 14px #ffb3cf); }

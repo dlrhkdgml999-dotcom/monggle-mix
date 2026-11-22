@@ -1,6 +1,6 @@
 // 몽글믹스 — 게임 핵심 (주인공·몽글이·야생 몽글이·전투·포획)
 import * as THREE from '../lib/three.min.js';
-import { SPECIES, ZONES, elemMult, expToNext, MAX_LV, BOX_MAX, CAPTURE_RATE, CAPTURE_RATE_NEW, QUESTS, QUEST_REWARD, JOBS, rollEquip, equipBonus, INV_MAX, TIERS } from './data.js';
+import { SPECIES, INH_POWER, INH_CD, ZONES, elemMult, expToNext, MAX_LV, BOX_MAX, CAPTURE_RATE, CAPTURE_RATE_NEW, QUESTS, QUEST_REWARD, JOBS, rollEquip, equipBonus, INV_MAX, TIERS } from './data.js';
 import { makeMonggle, makeHero, toon } from './models.js';
 import { clampToWorld, SPAWN, CAULDRON } from './world.js';
 import { sfx } from './sfx.js';
@@ -123,7 +123,7 @@ export class Game {
     return this.addUnit({
       kind: 'pet', data: m, sp: m.sp, name: s.name, model, elems: s.elems, role: s.role,
       range: s.range, speed: s.speed + 1, hp: st.maxHp, maxHp: st.maxHp, atk: st.atk,
-      atkCd: rand(0, 1), skillCd: 0, target: null, slot, buffs: {}, dead: false, reviveT: 0, face: 0,
+      atkCd: rand(0, 1), skillCd: 0, skill2Cd: 4, target: null, slot, buffs: {}, dead: false, reviveT: 0, face: 0,
     });
   }
 
@@ -731,13 +731,35 @@ export class Game {
   }
 
   // ---------- 스킬 ----------
-  useSkill(slot) {
+  // 물려받은 기술 (원래 기술보다 조금 약하고 느리게)
+  inhSkill(u) {
+    const sp = u.data?.inh && SPECIES[u.data.inh];
+    if (!sp) return null;
+    const k = sp.skill;
+    return { ...k, power: k.power * INH_POWER, dmg: k.dmg && k.dmg * INH_POWER, cd: Math.round(k.cd * INH_CD) };
+  }
+
+  useSkill(slot, inherited = false, quiet = false) {
     const u = this.units.find(x => x.kind === 'pet' && x.slot === slot);
     if (!u || u.dead) return false;
-    if (u.skillCd > 0) return false;
-    const sk = SPECIES[u.sp].skill;
+    const sk = inherited ? this.inhSkill(u) : SPECIES[u.sp].skill;
+    if (!sk) return false;
+    if ((inherited ? u.skill2Cd : u.skillCd) > 0) return false;
     const party = this.units.filter(x => (x.kind === 'pet' || x.kind === 'hero') && !x.dead);
-    if (sk.type === 'heal') {
+    if (sk.type === 'love') {
+      // 💞 파티 회복 + 응원, 하트천사는 대상 주변 범위 공격도
+      for (const p of party) { const h = Math.round(p.maxHp * sk.power); p.hp = Math.min(p.maxHp, p.hp + h); this.ui.floatText(p.model.root.position, '♥+' + h, 'heal'); }
+      this.buffAtk = Math.max(this.buffAtk, sk.buff || 0);
+      this.burst(u.model.root.position, 0xff8fb4, 12);
+      if (sk.dmg) {
+        const t = (this.hero.target && !this.hero.target.dead && this.hero.target.kind === 'wild') ? this.hero.target : this.nearestEnemy(u, 9);
+        if (t) {
+          const c = t.model.root.position;
+          for (const o of this.units) if (o.kind === 'wild' && !o.dead && dist2(o.model.root.position, c) < sk.radius) this.damage(u, o, sk.dmg);
+          this.ui.ring(c, '#ff9ecb', sk.radius);
+        }
+      }
+    } else if (sk.type === 'heal') {
       for (const p of party) { const h = Math.round(p.maxHp * sk.power); p.hp = Math.min(p.maxHp, p.hp + h); this.ui.floatText(p.model.root.position, '+' + h, 'heal'); }
     } else if (sk.type === 'guard') {
       u.buffs.guard = sk.dur; u.target = u.target || this.nearestEnemy(u, 6);
@@ -750,7 +772,7 @@ export class Game {
     } else {
       const t = (this.hero.target && !this.hero.target.dead && this.hero.target.kind === 'wild') ? this.hero.target
         : (u.target && !u.target.dead ? u.target : this.nearestEnemy(u, 9));
-      if (!t) { this.ui.toast('근처에 상대가 없어요'); return false; }
+      if (!t) { if (!quiet) this.ui.toast('근처에 상대가 없어요'); return false; }
       u.target = t;
       if (sk.type === 'strike') { this.dashTo(u, t); this.damage(u, t, sk.power); }
       else if (sk.type === 'proj') this.shoot(u, t, sk.power, 0xffe066, true);
@@ -763,10 +785,10 @@ export class Game {
         this.ui.ring(c, sk.type === 'slow' ? '#e9f2ff' : '#ffb36b', sk.radius || 3);
       } else if (sk.type === 'slow') { t.buffs.slow = sk.dur; this.shoot(u, t, sk.power, 0xffe066); }
     }
-    u.skillCd = sk.cd;
+    if (inherited) u.skill2Cd = sk.cd; else u.skillCd = sk.cd;
     u.atkT = ATTACK_TIME;
-    if (sk.type === 'heal') sfx.heal(); else sfx.skill();
-    this.ui.floatText(u.model.root.position, sk.name, 'skill', 0.9);
+    if (sk.type === 'heal' || sk.type === 'love') sfx.heal(); else sfx.skill();
+    this.ui.floatText(u.model.root.position, inherited ? '🧬 ' + sk.name : sk.name, 'skill', 0.9);
     return true;
   }
 
@@ -1007,12 +1029,17 @@ export class Game {
     }
     if (zone && zone.safe) u.hp = Math.min(u.maxHp, u.hp + u.maxHp * 0.12 * dt);
     else u.hp = Math.min(u.maxHp, u.hp + u.maxHp * 0.01 * dt);
-    u.atkCd -= dt; if (u.skillCd > 0) u.skillCd -= dt;
-    if (this.state.auto && u.skillCd <= 0 && !u.dead) {
-      const sk = SPECIES[u.sp].skill;
-      const needHeal = this.units.some(o => (o.kind === 'hero' || o.kind === 'pet') && !o.dead && o.hp < o.maxHp * 0.6);
-      if (sk.type === 'heal' ? needHeal : (u.target || this.hero.target)) this.useSkill(u.slot);
-    }
+    u.atkCd -= dt; if (u.skillCd > 0) u.skillCd -= dt; if (u.skill2Cd > 0) u.skill2Cd -= dt;
+    const wantSkill = sk => {
+      const fight = (u.target && !u.target.dead) || (this.hero.target && !this.hero.target.dead && this.hero.target.kind === 'wild');
+      if (sk.type === 'heal') return this.units.some(o => (o.kind === 'hero' || o.kind === 'pet') && !o.dead && o.hp < o.maxHp * 0.6);
+      if (sk.type === 'love' && !sk.dmg) return fight || this.units.some(o => (o.kind === 'hero' || o.kind === 'pet') && !o.dead && o.hp < o.maxHp * 0.6);
+      return fight;
+    };
+    if (this.state.auto && u.skillCd <= 0 && wantSkill(SPECIES[u.sp].skill)) this.useSkill(u.slot, false, true);
+    // 물려받은 기술은 자동 사냥이 아니어도 몽글이가 알아서 써요 (싸우는 중일 때)
+    const inh = u.skill2Cd <= 0 && this.inhSkill(u);
+    if (inh && wantSkill(inh)) { if (!this.useSkill(u.slot, true, true)) u.skill2Cd = 1.5; }
     const dHero = dist2(u.model.root.position, hp);
     // 주인공이 멀어지면 무조건 따라감
     if (dHero > 14) u.target = null;

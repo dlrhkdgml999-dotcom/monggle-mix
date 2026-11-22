@@ -91,12 +91,22 @@ export const SPECIES = {
   unicorn:  { name: '무지개유니콘', stage: 3, elems: ['fire', 'water', 'grass'], role: 'ranged',
               hp: 200, atk: 22, range: 6, speed: 4.2,
               skill: { name: '무지개 빛', type: 'aoe', power: 3.0, cd: 9, radius: 4 } },
+
+  // 💞 둘이 섞기로만 태어나는 커플 몽글이 (couple: true)
+  // love: 파티 체력 회복 + 공격력 응원(buff초), dmg가 있으면 대상 주변 범위 공격도
+  heartmong: { name: '하트몽글', stage: 2, couple: true, elems: ['fire', 'water', 'grass'], role: 'healer',
+              hp: 105, atk: 11, range: 4.5, speed: 3.8,
+              skill: { name: '두근두근 하트', type: 'love', power: 0.3, buff: 4, cd: 11 } },
+  heartangel: { name: '하트천사', stage: 3, couple: true, elems: ['fire', 'water', 'grass'], role: 'healer',
+              hp: 210, atk: 19, range: 5, speed: 4.2,
+              skill: { name: '사랑의 별비', type: 'love', power: 0.45, buff: 6, dmg: 2.6, radius: 3.6, cd: 11 } },
 };
 
 export const DEX_ORDER = ['bulssi', 'hotteok', 'mulbang', 'jogae', 'saessak', 'ggulbeol',
   'banjjak', 'iseul', 'dotori',
   'bulkkot', 'pado', 'supgom', 'gimmung', 'hwabun', 'ikki',
-  'haenim', 'gorae', 'saseum', 'unicorn'];
+  'haenim', 'gorae', 'saseum', 'unicorn',
+  'heartmong', 'heartangel'];
 
 // 조합: 정확한 짝 먼저, 없으면 속성 짝으로
 const EXACT = {
@@ -131,6 +141,17 @@ export const MIX_COST = 10;      // 반짝가루
 export const MIX_MIN_LV = 10;    // 재료 최소 레벨
 export const MIX_MIN_LV3 = 15;   // 3단계 재료 최소 레벨
 export function mixMinLv(spA, spB) { return Math.max(SPECIES[spA].stage, SPECIES[spB].stage) >= 2 ? MIX_MIN_LV3 : MIX_MIN_LV; }
+// 💞 둘이 섞기: 광희·하은이 한 마리씩 넣으면 둘 다 같은 아기를 하나씩 받는다.
+// 1단계끼리 → 하트몽글, 2단계 이상이 하나라도 있으면 → 하트천사
+export function coupleResult(spA, spB) {
+  return Math.max(SPECIES[spA].stage, SPECIES[spB].stage) >= 2 ? 'heartangel' : 'heartmong';
+}
+export const COUPLE_SHINY = 0.1; // 둘이 섞으면 반짝이 확률 10% (둘 다 같이 반짝이)
+
+// 물려받은 기술: 몽글이가 알아서 쓴다 (원래 기술보다 조금 약하고 느리게)
+export const INH_POWER = 0.8;
+export const INH_CD = 1.4;
+
 export const BOX_MAX = 20;       // 보관함 칸
 export const MAX_LV = 30;
 
@@ -162,6 +183,7 @@ export const QUESTS = [
   { text: '서쪽 달빛 버섯숲 가 보기 (Lv14 이상 추천)', to: { x: -30, z: -12 }, done: (s, g) => g.lastZone?.id === 'moon' },
   { text: '2단계 몽글이 둘을 섞어 3단계 만들기 (Lv15 둘)', done: s => ['haenim', 'gorae', 'saseum', 'unicorn'].some(k => s.dex[k]) },
   { text: '무지개유니콘 만나기', done: s => !!s.dex.unicorn },
+  { text: '믹스 솥 💞 둘이 섞기로 하트몽글 만나기', to: { x: 0, z: 1 }, done: s => !!(s.dex.heartmong || s.dex.heartangel) },
   { text: '도감 모두 채우기', count: s => [Object.keys(s.dex).length, DEX_ORDER.length], done: s => Object.keys(s.dex).length >= DEX_ORDER.length },
 ];
 export const QUEST_REWARD = 10;

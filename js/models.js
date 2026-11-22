@@ -85,7 +85,18 @@ const PAL = {
   gorae:    [{ a: 0x5ab0ff, b: 0xffffff }, { a: 0xff9ecb, b: 0xfff6d6 }],
   saseum:   [{ a: 0xd9b48a, b: 0x6fcf6a }, { a: 0xf6f6f6, b: 0xffb3d9 }],
   unicorn:  [{ a: 0xffffff, b: 0xffd34d }, { a: 0x2e2a4a, b: 0xb48cff }],
+  heartmong:  [{ a: 0xffb6cf, b: 0xff4f86 }, { a: 0xfff0b8, b: 0xb48cff }],
+  heartangel: [{ a: 0xfff4f8, b: 0xff6f9f }, { a: 0xe8dcff, b: 0xffd34d }],
 };
+
+// 하트 모양 (동그라미 두 개 + 거꾸로 원뿔). 움직이지 않는 장식용 그룹
+function heart(mat, x, y, z, s, flat = 0.5) {
+  const g = new THREE.Group();
+  for (const sx of [-1, 1]) g.add(ball(mat, sx * 0.28, 0.12, 0, 0.36, 0.36, 0.32));
+  const c = cone(mat, 0, -0.32, 0, 0.6, 0.62); c.rotation.z = Math.PI; g.add(c);
+  g.position.set(x, y, z); g.scale.set(s, s, s * flat);
+  return g;
+}
 
 const BUILD = {
   bulssi(g, c) { // 볼 빨간 콩 + 머리 불꽃
@@ -354,7 +365,45 @@ const BUILD = {
     for (const sx of [-1, 1]) g.add(cone(body, sx * 0.12, 1.32, 0.24, 0.05, 0.12));
     face(g, 1.1, 0.52, 0.11, 0.85);
   },
+  heartmong(g, c) { // 💞 둘이 섞기 — 하트 더듬이 + 작은 날개로 둥실둥실
+    const body = toon(c.a), hm = toon(c.b, { emissive: c.b, emissiveIntensity: 0.35 });
+    g.add(ball(body, 0, 0.5, 0, 0.4, 0.4, 0.38));
+    g.add(heart(toon(0xffffff), 0, 0.36, 0.3, 0.17, 0.35)); // 배에 하얀 하트
+    g.add(heart(hm, 0, 0.36, 0.33, 0.11, 0.3));
+    for (const sx of [-1, 1]) {
+      const st = cyl(body, sx * 0.13, 0.98, -0.02, 0.022, 0.24); st.rotation.z = -sx * 0.35; g.add(st);
+      const hh = heart(hm, sx * 0.2, 1.12, -0.02, 0.12, 0.6); hh.rotation.z = -sx * 0.3; hh.userData.ear = sx; g.add(hh);
+      g.add(ball(body, sx * 0.17, 0.12, 0.1, 0.1, 0.07, 0.12)); // 발
+    }
+    const wing = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
+    for (const sx of [-1, 1]) { const w = ball(wing, sx * 0.4, 0.62, -0.16, 0.2, 0.13, 0.04); w.rotation.z = sx * 0.5; w.userData.wing = sx; g.add(w); }
+    face(g, 0.56, 0.38, 0.15);
+  },
+  heartangel(g, c) { // 💞 하트천사 — 금빛 고리 + 큰 날개 + 하트 꼬리
+    const body = toon(c.a), hm = toon(c.b, { emissive: c.b, emissiveIntensity: 0.4 });
+    g.add(ball(body, 0, 0.62, 0, 0.44, 0.46, 0.42));
+    g.add(ball(body, 0, 1.14, 0.04, 0.32, 0.3, 0.3));         // 머리
+    g.add(heart(hm, 0, 0.56, 0.37, 0.16, 0.3));                 // 가슴 하트
+    const halo = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.035, 8, 24), toon(0xffe066, { emissive: 0xffd34d, emissiveIntensity: 0.7 }));
+    halo.position.set(0, 1.56, 0.02); halo.rotation.x = Math.PI / 2 - 0.25; g.add(halo);
+    for (const sx of [-1, 1]) {
+      const ear = ball(body, sx * 0.24, 1.36, 0.02, 0.09, 0.13, 0.07); ear.rotation.z = -sx * 0.4; ear.userData.ear = sx; g.add(ear);
+      g.add(ball(hm, sx * 0.24, 1.36, 0.06, 0.05, 0.08, 0.04));
+      g.add(ball(body, sx * 0.2, 0.13, 0.12, 0.12, 0.08, 0.14)); // 발
+      g.add(ball(body, sx * 0.42, 0.6, 0.12, 0.1, 0.12, 0.1));   // 팔
+    }
+    const wing = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+    for (const sx of [-1, 1]) {
+      const w = ball(wing, sx * 0.5, 0.9, -0.28, 0.32, 0.2, 0.05); w.rotation.z = sx * 0.55; w.userData.wing = sx; g.add(w);
+    }
+    const tail = cyl(body, 0, 0.42, -0.5, 0.03, 0.3); tail.rotation.x = -1.0; tail.userData.tail = true; g.add(tail);
+    g.add(heart(hm, 0, 0.32, -0.7, 0.1, 0.6));
+    face(g, 1.12, 0.33, 0.12, 0.9);
+  },
 };
+
+// 옛 버전 저장이나 아직 모르는 몽글이가 와도 멈추지 않게 (동글한 공으로 대신)
+function fallback(g, c) { g.add(ball(toon(c.a), 0, 0.45, 0, 0.4)); face(g, 0.5, 0.39); }
 
 // 몽글이 만들기. 반환: { root(위치용), body(흔들림용), mats(채도 조절용) }
 export function makeMonggle(sp, { shiny = false } = {}) {
@@ -362,7 +411,7 @@ export function makeMonggle(sp, { shiny = false } = {}) {
   const body = new THREE.Group();
   root.add(body);
   const pal = PAL[sp] ? PAL[sp][shiny ? 1 : 0] : { a: 0xcccccc, b: 0x999999 };
-  BUILD[sp](body, pal);
+  (BUILD[sp] || fallback)(body, pal);
   const scale = { 1: 0.9, 2: 1.05, 3: 1.25 }[SPECIES[sp]?.stage] || 1;
   body.scale.setScalar(scale);
   const motion = MOTION.hop.includes(sp) ? 'hop' : MOTION.fly.includes(sp) ? 'fly' : 'walk';
@@ -422,7 +471,7 @@ export function makeHero(look = 'boy', job = 'mage') {
 
 const MOTION = {
   hop: ['bulssi', 'hotteok', 'mulbang', 'saessak', 'jogae', 'iseul'],
-  fly: ['ggulbeol', 'gimmung', 'banjjak'],
+  fly: ['ggulbeol', 'gimmung', 'banjjak', 'heartmong', 'heartangel'],
 };
 function findRig(body) {
   const rig = { legs: [], feet: [], tails: [], wings: [], ears: [], eyes: [], his: [], puffs: [] };

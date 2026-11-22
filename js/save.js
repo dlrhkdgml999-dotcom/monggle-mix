@@ -141,5 +141,7 @@ export function normalize(s) {
   s.inv = Array.isArray(s.inv) ? s.inv.filter(Boolean) : Object.values(s.inv || {});
   s.eq = s.eq || {};
   s.nextItem = s.nextItem || 1;
+  s.coupleIn = Array.isArray(s.coupleIn) ? s.coupleIn.filter(Boolean) : Object.values(s.coupleIn || {});
+  if (s.coupleOut && !s.monggles.some(m => m.id === s.coupleOut.monId)) s.coupleOut = null;
   return s;
 }

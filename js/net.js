@@ -283,7 +283,7 @@ export class Net {
     if (!this.on || !to) return false;
     const key = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     await this.M.set(this.M.ref(this.db, `mail/${to.uid}/${key}`), { ...gift, key, from: this.state.name, t: Date.now() });
-    return true;
+    return key; // 둘이 섞기에서 부탁 번호로 씀
   }
 
   // 통화·같이 사냥 상태 (점검용)

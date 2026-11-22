@@ -1,6 +1,6 @@
 // 몽글믹스 — 화면 UI (상단 정보, 스킬 버튼, 가방, 도감, 믹스 솥)
 import * as THREE from '../lib/three.min.js';
-import { SPECIES, ELEM, DEX_ORDER, mixResult, mixMinLv, MIX_COST, MIX_MIN_LV, BOX_MAX, expToNext, MAX_LV, QUESTS, JOBS, SHOP, EQUIP, TIERS, ENHANCE_RATE, enhanceCost, itemStat, INV_MAX } from './data.js';
+import { SPECIES, ELEM, DEX_ORDER, mixResult, mixMinLv, coupleResult, COUPLE_SHINY, MIX_COST, MIX_MIN_LV, BOX_MAX, expToNext, MAX_LV, QUESTS, JOBS, SHOP, EQUIP, TIERS, ENHANCE_RATE, enhanceCost, itemStat, INV_MAX } from './data.js';
 import { BOUNDS } from './world.js';
 import { makeMonggle, makeHero } from './models.js';
 import { sfx, isMuted, setMuted } from './sfx.js';
@@ -199,7 +199,8 @@ export class UI {
       const u = this.game.units.find(x => x.kind === 'pet' && x.slot === i);
       if (!u) continue;
       const sk = SPECIES[u.sp].skill;
-      const b = h('button', 'skill', `<img src="${icon(u.sp, u.data.shiny)}"><small>${sk.name}</small><i class="cd"></i>`);
+      const inh = u.data.inh && SPECIES[u.data.inh] ? `<span class="inh" title="물려받은 기술: ${SPECIES[u.data.inh].skill.name}"><img src="${icon(u.data.inh)}"></span>` : '';
+      const b = h('button', 'skill', `<img src="${icon(u.sp, u.data.shiny)}"><small>${sk.name}</small><i class="cd"></i>${inh}`);
       b.dataset.slot = i;
       b.onpointerdown = e => { e.stopPropagation(); if (this.game.useSkill(i)) this.pulse(b); else this.shake(b); };
       box.appendChild(b);
@@ -223,12 +224,14 @@ export class UI {
       let left = 0, total = 1;
       if (b.classList.contains('hero')) { left = g.heroSkillCd; total = 15; }
       else if (b.classList.contains('job')) { left = g.jobSkillCd || 0; total = (JOBS[this.state.job] || JOBS.mage).skill.cd; }
-      else { const u = g.units.find(x => x.kind === 'pet' && x.slot === +b.dataset.slot); if (u) { left = u.dead ? 99 : u.skillCd; total = SPECIES[u.sp].skill.cd; } }
+      else { const u = g.units.find(x => x.kind === 'pet' && x.slot === +b.dataset.slot); if (u) { left = u.dead ? 99 : u.skillCd; total = SPECIES[u.sp].skill.cd; b.querySelector('.inh')?.classList.toggle('ready', !u.dead && u.skill2Cd <= 0); } }
       cd.style.height = Math.max(0, Math.min(1, left / total)) * 100 + '%';
       b.classList.toggle('ready', left <= 0);
     }
     const panelOpen = !$('#panel').classList.contains('hidden');
     $('#mixBtn').classList.toggle('hidden', !g.nearCauldron() || panelOpen);
+    const mixLabel = (this.state.coupleIn || []).length ? '🍲 믹스 솥 열기 💌' : '🍲 믹스 솥 열기';
+    if ($('#mixBtn').textContent !== mixLabel) $('#mixBtn').textContent = mixLabel;
     $('#shopBtn').classList.toggle('hidden', !(g.lastZone?.safe) || panelOpen);
     $('#potBtn .badge2').textContent = this.state.items?.potion || 0;
     $('#potBtn').classList.toggle('empty', !this.state.items?.potion);
@@ -675,6 +678,7 @@ export class UI {
     const s = this.state, to = this.net?.giftTarget?.();
     if (!this.net?.on || !to) { this.toast('상대가 한 번이라도 접속해야 선물할 수 있어요'); return; }
     if (s.monggles.length <= 1) { this.toast('마지막 한 마리는 선물할 수 없어요'); return; }
+    if (s.coupleOut?.monId === m.id) { this.toast('💞 둘이 섞기를 기다리는 몽글이예요'); return; }
     const b = this.openPanel(`🎁 ${to.name}에게 선물할까요?`);
     b.insertAdjacentHTML('beforeend', `<div class="born"><img src="${icon(m.sp, m.shiny)}"><h3>${m.shiny ? '반짝이 ' : ''}${SPECIES[m.sp].name} <span class="lv">Lv ${m.lv}</span></h3></div>
       <input id="gMsg" class="tin" maxlength="40" placeholder="한마디 (예: 귀엽게 키워 줘♥)">
@@ -703,6 +707,7 @@ export class UI {
   giftArrived(g, done) {
     const s = this.state;
     if (!this.game) { setTimeout(() => this.giftArrived(g, done), 1500); return; }
+    if (g.kind && g.kind.startsWith('couple')) { this.coupleMail(g, done); return; }
     if (g.kind === 'mon' && s.monggles.length >= BOX_MAX) {
       if (!this.boxWarned) { this.boxWarned = true; this.toast(`🎁 ${g.from}의 선물이 왔는데 가방이 꽉 찼어요. 자리를 만들면 받아져요`); }
       setTimeout(() => this.giftArrived(g, done), 20000); return;
@@ -731,6 +736,7 @@ export class UI {
       <div class="btns center"><button class="btn" id="rsYes">네, 처음부터</button><button class="btn ghost" id="rsNo">아니요</button></div>`);
     $('#rsNo', b).onclick = () => this.openBox();
     $('#rsYes', b).onclick = () => {
+      if (this.state.coupleOut) this.net?.sendGift?.({ kind: 'coupleCancel', askKey: this.state.coupleOut.key }).catch(() => {});
       const s = this.state, fresh = newSave(s.name, s.look);
       for (const k of Object.keys(s)) delete s[k];
       Object.assign(s, fresh);
@@ -746,7 +752,7 @@ export class UI {
     const sp = SPECIES[m.sp];
     const inParty = s.party.includes(id);
     const b = this.openPanel(`${m.shiny ? '✨ ' : ''}${sp.name}`);
-    const inh = m.inh ? `<div class="kv"><span>물려받은 기술</span><b>${SPECIES[m.inh].skill.name}</b></div>` : '';
+    const inh = m.inh && SPECIES[m.inh] ? `<div class="kv"><span>물려받은 기술 🧬</span><b>${SPECIES[m.inh].skill.name} <small class="auto">싸울 때 알아서 써요</small></b></div>` : '';
     const st = g ? (inParty ? g.units.find(u => u.data === m) : null) : null;
     b.insertAdjacentHTML('beforeend', `
       <div class="detail">
@@ -787,7 +793,7 @@ export class UI {
       const got = s.dex[sp];
       const S = SPECIES[sp];
       return got ? `<div class="mcard"><img src="${icon(sp)}"><div class="nm">${S.name}</div><div class="sub">${elemTags(sp)}</div></div>`
-        : `<div class="mcard unknown"><img src="${icon(sp)}"><div class="nm">???</div><div class="sub">${S.stage === 2 ? '조합으로 태어나요' : '야생에서 만나요'}</div></div>`;
+        : `<div class="mcard unknown"><img src="${icon(sp)}"><div class="nm">???</div><div class="sub">${S.couple ? '💞 둘이 섞어야 태어나요' : S.stage >= 2 ? '조합으로 태어나요' : '야생에서 만나요'}</div></div>`;
     }).join('');
     b.appendChild(grid);
     b.appendChild(h('p', 'hint', '새 몽글이를 만날수록 섬에 색이 돌아와요.'));
@@ -797,6 +803,9 @@ export class UI {
   openMix(pick = []) {
     const s = this.state;
     const b = this.openPanel(`🍲 믹스 솥 <small>✦ ${s.dust} · 한 번에 ✦${MIX_COST}</small>`, 'mix');
+    this.mixTabs(b, 'solo');
+    const waitId = s.coupleOut?.monId;
+    pick = pick.filter(id => id !== waitId);
     const [a, c] = pick.map(id => s.monggles.find(m => m.id === id));
     const res = a && c ? mixResult(a.sp, c.sp) : null;
     const slot = m => m ? `<div class="slot full"><img src="${icon(m.sp, m.shiny)}"><b>${SPECIES[m.sp].name}</b><span class="lv">Lv${m.lv}</span></div>` : `<div class="slot">?</div>`;
@@ -811,16 +820,17 @@ export class UI {
       <div class="btns center"><button class="btn big" id="doMix">섞기!</button></div>
       <p class="hint">Lv${MIX_MIN_LV} 이상 몽글이 두 마리를 골라요. 재료 두 마리는 새 몽글이로 다시 태어나요.</p>`);
     const grid = h('div', 'grid');
-    grid.innerHTML = s.monggles.map(m => this.monCard(m, m.lv < MIX_MIN_LV ? '<span class="lock">Lv' + MIX_MIN_LV + '부터</span>' : '')).join('');
+    grid.innerHTML = s.monggles.map(m => this.monCard(m, m.id === waitId ? '<span class="lock love">💞 기다리는 중</span>' : m.lv < MIX_MIN_LV ? '<span class="lock">Lv' + MIX_MIN_LV + '부터</span>' : '')).join('');
     for (const el of grid.children) {
       const id = +el.dataset.id;
       if (pick.includes(id)) el.classList.add('picked');
-      if (s.monggles.find(m => m.id === id).lv < MIX_MIN_LV) el.classList.add('locked');
+      if (s.monggles.find(m => m.id === id).lv < MIX_MIN_LV || id === waitId) el.classList.add('locked');
     }
     b.appendChild(grid);
     grid.onclick = e => {
       const el = e.target.closest('.mcard'); if (!el) return;
       const id = +el.dataset.id;
+      if (id === waitId) { this.toast('💞 둘이 섞기를 기다리는 몽글이예요'); return; }
       if (el.classList.contains('locked')) { this.toast(`Lv${MIX_MIN_LV}부터 섞을 수 있어요`); return; }
       let p = pick.includes(id) ? pick.filter(x => x !== id) : [...pick, id].slice(-2);
       this.openMix(p);
@@ -869,5 +879,249 @@ export class UI {
       $('#again', b2).onclick = () => this.openMix();
       $('#ok', b2).onclick = () => this.closePanel();
     }, 1600);
+  }
+
+  // ---------- 💞 둘이 섞기 ----------
+  // 한 사람이 몽글이를 솥에 넣고 부탁(우편) → 상대가 자기 몽글이를 넣으면 둘 다 같은 아기를 하나씩 받아요.
+  // 받은 아기는 상대 몽글이의 기술을 물려받아요. 우편함(mail)만 써서 둘이 동시에 접속하지 않아도 돼요.
+  mixTabs(b, on) {
+    const n = (this.state.coupleIn || []).length;
+    const t = h('div', 'tabs', `<button data-t="solo" class="${on === 'solo' ? 'on' : ''}">🍲 혼자 섞기</button><button data-t="love" class="${on === 'love' ? 'on' : ''}">💞 둘이 섞기${n ? ` <small class="nb">${n}</small>` : ''}</button>`);
+    t.onclick = e => { const x = e.target.closest('button'); if (x) (x.dataset.t === 'love' ? this.openCouple() : this.openMix()); };
+    b.querySelector('h2').after(t);
+  }
+  coupleNeed(sp) { return SPECIES[sp].stage >= 2 ? 15 : MIX_MIN_LV; }
+
+  openCouple(pick = null) {
+    const s = this.state, to = this.net?.giftTarget?.();
+    const b = this.openPanel(`🍲 믹스 솥 <small>✦ ${s.dust} · 한 번에 ✦${MIX_COST}</small>`, 'mix');
+    this.mixTabs(b, 'love');
+    if (!this.net?.on || !to) {
+      b.insertAdjacentHTML('beforeend', `<div class="love-intro"><div class="hearts">💞</div>
+        <p>둘이 섞기는 광희·하은 둘 다 <b>비밀번호로 로그인</b>하고, 상대가 한 번이라도 접속한 뒤에 할 수 있어요.</p></div>`);
+      return;
+    }
+    const ins = s.coupleIn || [];
+    // 받은 부탁
+    if (ins.length) {
+      const box = h('div', 'asks');
+      box.innerHTML = ins.map((q, i) => `<div class="ask"><img src="${icon(q.mon.sp, q.mon.shiny)}">
+        <div><b>💌 ${esc(josa(q.from, '이', '가'))} ${SPECIES[q.mon.sp]?.name || '몽글이'} Lv${q.mon.lv}를 넣고 기다려요</b>${q.msg ? `<p class="gmsg">“${esc(q.msg)}”</p>` : ''}</div>
+        <button class="btn" data-i="${i}">같이 섞기</button></div>`).join('');
+      box.onclick = e => { const x = e.target.closest('button'); if (x) this.openCoupleAnswer(ins[+x.dataset.i]); };
+      b.appendChild(box);
+    }
+    // 내가 보낸 부탁
+    const out = s.coupleOut, om = out && s.monggles.find(m => m.id === out.monId);
+    if (out) {
+      b.insertAdjacentHTML('beforeend', `<div class="ask mine">${om ? `<img src="${icon(om.sp, om.shiny)}">` : ''}
+        <div><b>💞 ${om ? SPECIES[om.sp].name : '몽글이'}를 넣고 ${esc(josa(out.toName || to.name, '이', '가'))} 넣어 주길 기다리는 중…</b><p class="hint">${esc(out.toName || to.name)}이(가) 접속하면 알림이 가요. 기다리는 동안 이 몽글이는 데리고 다닐 수 있지만 섞거나 선물할 순 없어요.</p></div>
+        <button class="btn ghost" id="cCancel">그만두기</button></div>`);
+      $('#cCancel', b).onclick = () => this.cancelCouple();
+      if (!ins.length) b.insertAdjacentHTML('beforeend', `<p class="hint center">${esc(to.name)}이(가) 몽글이를 넣으면 둘 다 💞 같은 아기를 하나씩 받아요.</p>`);
+      return;
+    }
+    // 새로 부탁하기
+    const m = pick != null && s.monggles.find(x => x.id === pick);
+    const res = m && SPECIES[m.sp].stage >= 2 ? coupleResult(m.sp, m.sp) : null; // 2단계 이상을 넣으면 하트천사로 정해져요
+    b.insertAdjacentHTML('beforeend', `
+      <div class="mixrow">${m ? `<div class="slot full"><img src="${icon(m.sp, m.shiny)}"><b>${SPECIES[m.sp].name}</b><span class="lv">Lv${m.lv}</span></div>` : '<div class="slot">?</div>'}
+        <span class="op">+</span><div class="slot partner"><b>${esc(to.name)}의<br>몽글이</b></div><span class="op">=</span>
+        <div class="slot res love">${res && s.dex[res] ? `<img src="${icon(res)}"><b>${SPECIES[res].name}</b>` : '<b>💞<br>???</b>'}</div></div>
+      <input id="cMsg" class="tin" maxlength="40" placeholder="한마디 (예: 우리 아기 만들자♥)">
+      <div class="btns center"><button class="btn big love" id="cAsk">같이 섞자고 하기</button></div>
+      <p class="hint">내 몽글이 한 마리를 넣고 ${esc(to.name)}에게 부탁해요. 둘 다 1단계면 하트몽글, 2단계 이상이 있으면 하트천사가 태어나요. 1단계는 Lv${MIX_MIN_LV}, 2단계 이상은 Lv15부터 넣을 수 있어요.</p>`);
+    const grid = h('div', 'grid');
+    grid.innerHTML = s.monggles.map(x => this.monCard(x, x.lv < this.coupleNeed(x.sp) ? `<span class="lock">Lv${this.coupleNeed(x.sp)}부터</span>` : '')).join('');
+    for (const el of grid.children) {
+      const x = s.monggles.find(q => q.id === +el.dataset.id);
+      if (x.id === pick) el.classList.add('picked');
+      if (x.lv < this.coupleNeed(x.sp)) el.classList.add('locked');
+    }
+    b.appendChild(grid);
+    grid.onclick = e => {
+      const el = e.target.closest('.mcard'); if (!el) return;
+      const x = s.monggles.find(q => q.id === +el.dataset.id);
+      if (el.classList.contains('locked')) { this.toast(`${SPECIES[x.sp].stage >= 2 ? '2단계 이상은' : '1단계는'} Lv${this.coupleNeed(x.sp)}부터 넣을 수 있어요`); return; }
+      this.openCouple(x.id === pick ? null : x.id);
+    };
+    const btn = $('#cAsk', b);
+    btn.textContent = `${to.name}에게 같이 섞자고 하기`;
+    const ok = m && s.dust >= MIX_COST && s.monggles.length > 1;
+    btn.disabled = !ok;
+    if (m && s.dust < MIX_COST) btn.textContent = `반짝가루가 ${MIX_COST - s.dust}개 모자라요`;
+    else if (m && s.monggles.length <= 1) btn.textContent = '몽글이가 두 마리 이상 있어야 해요';
+    btn.onclick = async () => {
+      if (!ok) return;
+      btn.disabled = true;
+      const msg = $('#cMsg', b).value.trim();
+      const key = await this.net.sendGift({ kind: 'coupleAsk', mon: { sp: m.sp, lv: m.lv, shiny: !!m.shiny }, msg }).catch(() => false);
+      if (!key) { btn.disabled = false; this.toast('부탁을 못 보냈어요. 인터넷을 확인해 주세요'); return; }
+      s.dust -= MIX_COST;
+      s.coupleOut = { key, monId: m.id, sp: m.sp, toName: to.name, t: Date.now() };
+      this.save(); sfx.bubble(); this.renderTop();
+      this.toast(`💌 ${to.name}에게 같이 섞자고 부탁했어요`);
+      this.openCouple();
+    };
+  }
+
+  async cancelCouple() {
+    const s = this.state, out = s.coupleOut; if (!out) return;
+    await this.net.sendGift({ kind: 'coupleCancel', askKey: out.key }).catch(() => {});
+    s.coupleOut = null; s.dust += MIX_COST;
+    this.save(); this.renderTop(); sfx.tap();
+    this.toast('둘이 섞기를 그만뒀어요 (반짝가루는 돌려받았어요)');
+    this.openCouple();
+  }
+
+  openCoupleAnswer(q, pick = null) {
+    const s = this.state;
+    const b = this.openPanel(`💞 ${esc(josa(q.from, '이랑', '랑'))} 같이 섞기 <small>✦ ${s.dust}</small>`, 'mix');
+    const m = pick != null && s.monggles.find(x => x.id === pick);
+    const busy = s.coupleOut?.monId;
+    const res = m ? coupleResult(q.mon.sp, m.sp) : null;
+    b.insertAdjacentHTML('beforeend', `
+      <div class="mixrow"><div class="slot full partner"><img src="${icon(q.mon.sp, q.mon.shiny)}"><b>${SPECIES[q.mon.sp]?.name}</b><span class="lv">${esc(q.from)} · Lv${q.mon.lv}</span></div>
+        <span class="op">+</span>${m ? `<div class="slot full"><img src="${icon(m.sp, m.shiny)}"><b>${SPECIES[m.sp].name}</b><span class="lv">Lv${m.lv}</span></div>` : '<div class="slot">?</div>'}
+        <span class="op">=</span><div class="slot res love">${res ? (s.dex[res] ? `<img src="${icon(res)}"><b>${SPECIES[res].name}</b>` : `<img class="sil" src="${icon(res)}"><b>???</b>`) : '<b>💞<br>???</b>'}</div></div>
+      <div class="btns center"><button class="btn big love" id="cDo">같이 섞기!</button><button class="btn ghost" id="cNo">이번엔 안 할래요</button></div>
+      <p class="hint">내 몽글이 한 마리를 골라요. 둘 다 같은 아기를 하나씩 받고, 내 아기는 ${esc(q.from)}의 ${SPECIES[q.mon.sp]?.name} 기술을 물려받아요.</p>`);
+    const grid = h('div', 'grid');
+    grid.innerHTML = s.monggles.map(x => this.monCard(x, x.id === busy ? '<span class="lock love">💞 기다리는 중</span>' : x.lv < this.coupleNeed(x.sp) ? `<span class="lock">Lv${this.coupleNeed(x.sp)}부터</span>` : '')).join('');
+    for (const el of grid.children) {
+      const x = s.monggles.find(z => z.id === +el.dataset.id);
+      if (x.id === pick) el.classList.add('picked');
+      if (x.lv < this.coupleNeed(x.sp) || x.id === busy) el.classList.add('locked');
+    }
+    b.appendChild(grid);
+    grid.onclick = e => {
+      const el = e.target.closest('.mcard'); if (!el) return;
+      const x = s.monggles.find(z => z.id === +el.dataset.id);
+      if (x.id === busy) { this.toast('💞 다른 둘이 섞기를 기다리는 몽글이예요'); return; }
+      if (el.classList.contains('locked')) { this.toast(`${SPECIES[x.sp].stage >= 2 ? '2단계 이상은' : '1단계는'} Lv${this.coupleNeed(x.sp)}부터 넣을 수 있어요`); return; }
+      this.openCoupleAnswer(q, x.id === pick ? null : x.id);
+    };
+    const btn = $('#cDo', b);
+    const ok = m && s.dust >= MIX_COST;
+    btn.disabled = !ok;
+    if (m && s.dust < MIX_COST) btn.textContent = `반짝가루가 ${MIX_COST - s.dust}개 모자라요`;
+    btn.onclick = () => ok && this.doCoupleMix(q, m, btn);
+    $('#cNo', b).onclick = async () => {
+      await this.net.sendGift({ kind: 'coupleNo', askKey: q.key }).catch(() => {});
+      s.coupleIn = (s.coupleIn || []).filter(x => x.key !== q.key);
+      this.save(); this.toast(`${q.from}에게 다음에 하자고 전했어요`);
+      this.openCouple();
+    };
+  }
+
+  async doCoupleMix(q, mine, btn) {
+    const s = this.state, g = this.game;
+    btn.disabled = true;
+    const res = coupleResult(q.mon.sp, mine.sp);
+    const shiny = Math.random() < COUPLE_SHINY;
+    const sent = await this.net.sendGift({ kind: 'coupleDone', askKey: q.key, res, shiny, mon: { sp: mine.sp, lv: mine.lv } }).catch(() => false);
+    if (!sent) { btn.disabled = false; this.toast('못 섞었어요. 인터넷을 확인해 주세요'); return; }
+    s.dust -= MIX_COST;
+    s.coupleIn = (s.coupleIn || []).filter(x => x.key !== q.key);
+    s.monggles = s.monggles.filter(x => x !== mine);
+    s.party = s.party.filter(id => id !== mine.id);
+    const baby = this.addBaby(res, shiny, q.mon.sp);
+    if (!s.party.length) s.party.push(baby.id);
+    g.syncParty(); this.save(); this.renderTop();
+    this.coupleBorn(baby, q.from);
+  }
+
+  // 아기 몽글이 넣기 (물려받은 기술 = 상대 몽글이 기술)
+  addBaby(res, shiny, fromSp) {
+    const s = this.state, g = this.game;
+    const m = { id: s.nextId++, sp: res, lv: 1, exp: 0, shiny: !!shiny };
+    if (fromSp && fromSp !== res && SPECIES[fromSp]) m.inh = fromSp;
+    s.monggles.push(m);
+    if (s.party.length < g.partySize()) s.party.push(m.id);
+    m.isNew = !s.dex[res];
+    s.dex[res] = (s.dex[res] || 0) + 1;
+    s.mixes = (s.mixes || 0) + 1;
+    s.coupleMixes = (s.coupleMixes || 0) + 1;
+    g.refreshVivid();
+    return m;
+  }
+
+  coupleBorn(m, partner) {
+    const isNew = m.isNew; delete m.isNew; this.save();
+    sfx.bubble();
+    const b = this.openPanel('💞 보글보글…', 'mix');
+    b.insertAdjacentHTML('beforeend', `<div class="brew love"><div class="pot">🍲</div><div class="hearts">💕</div></div>`);
+    setTimeout(() => {
+      const b2 = this.openPanel(m.shiny ? '✨ 둘이 같이 대성공! ✨' : `💞 ${esc(josa(partner, '이랑', '랑'))} 같이 만든 아기예요!`, 'mix');
+      b2.insertAdjacentHTML('beforeend', `
+        <div class="born love ${m.shiny ? 'shiny' : ''}">
+          <img src="${icon(m.sp, m.shiny)}"><h3>${m.shiny ? '반짝이 ' : ''}${SPECIES[m.sp].name}</h3>
+          <div class="sub">${elemTags(m.sp)} <span class="role">${ROLE[SPECIES[m.sp].role]}</span></div>
+          ${m.inh ? `<p>${esc(partner)}의 몽글이에게 물려받은 기술: <b>${SPECIES[m.inh].skill.name}</b></p>` : ''}
+          <p class="hint">${esc(partner)}도 똑같은 아기를 하나 받았어요</p>
+          ${isNew ? '<p class="new">도감에 새로 등록됐어요 · 섬에 색이 조금 돌아왔어요</p>' : ''}
+        </div>
+        <div class="btns center"><button class="btn" id="cHeart">고마워 ❤️</button><button class="btn ghost" id="ok">닫기</button></div>`);
+      sfx.born(true);
+      this.game.burst(this.game.hero.model.root.position, 0xff8fb4, 24);
+      $('#cHeart', b2).onclick = () => { this.closePanel(); this.emote(this.game.hero.model.root, '❤️'); this.net.sendEmote('❤️'); };
+      $('#ok', b2).onclick = () => this.closePanel();
+    }, 1800);
+  }
+
+  // 둘이 섞기 우편 (coupleAsk 부탁 / coupleDone 섞었음 / coupleNo 다음에 / coupleCancel 그만둠)
+  coupleMail(g, done) {
+    const s = this.state;
+    s.coupleIn = s.coupleIn || [];
+    if (g.kind === 'coupleAsk') {
+      if (!g.mon || !SPECIES[g.mon.sp]) { done(); return; }
+      // 한 사람은 부탁을 하나만 → 같은 사람의 옛 부탁은 새 것으로
+      s.coupleIn = s.coupleIn.filter(x => x.from !== g.from && x.key !== g.key);
+      s.coupleIn.push({ key: g.key, from: g.from, mon: g.mon, msg: g.msg || '', t: g.t });
+      this.save(); done(); sfx.friend();
+      if (!this.panelOpen) {
+        const b = this.openPanel(`💌 ${esc(g.from)}의 부탁`);
+        b.insertAdjacentHTML('beforeend', `<div class="born love"><img src="${icon(g.mon.sp, g.mon.shiny)}">
+          <h3>${esc(josa(g.from, '이', '가'))} ${SPECIES[g.mon.sp].name}를 솥에 넣었어요</h3>
+          ${g.msg ? `<p class="gmsg">“${esc(g.msg)}”</p>` : ''}<p>내 몽글이도 넣으면 둘 다 💞 아기를 하나씩 받아요</p></div>
+          <div class="btns center"><button class="btn love" id="cGo">지금 같이 섞기</button><button class="btn ghost" id="cLater">나중에 (믹스 솥에서)</button></div>`);
+        const q = s.coupleIn.at(-1);
+        $('#cGo', b).onclick = () => this.openCoupleAnswer(q);
+        $('#cLater', b).onclick = () => this.closePanel();
+      } else this.toast(`💌 ${josa(g.from, '이', '가')} 둘이 섞기를 부탁했어요 (믹스 솥 💞)`);
+      return;
+    }
+    if (g.kind === 'coupleCancel') {
+      s.coupleIn = s.coupleIn.filter(x => x.key !== g.askKey);
+      this.save(); done();
+      this.toast(`${josa(g.from, '이', '가')} 둘이 섞기 부탁을 거뒀어요`);
+      return;
+    }
+    const out = s.coupleOut && s.coupleOut.key === g.askKey ? s.coupleOut : null;
+    if (g.kind === 'coupleNo') {
+      if (out) { s.coupleOut = null; s.dust += MIX_COST; this.renderTop(); }
+      this.save(); done();
+      this.toast(`${josa(g.from, '이', '가')} 다음에 같이 섞재요 (반짝가루는 돌려받았어요)`);
+      return;
+    }
+    if (g.kind === 'coupleDone') {
+      if (!SPECIES[g.res]) { done(); return; }
+      if (!out && s.monggles.length >= BOX_MAX) { // 이미 그만둔 부탁이면 아기만 받아요 → 자리가 필요
+        if (!this.boxWarned) { this.boxWarned = true; this.toast('💞 아기가 왔는데 가방이 꽉 찼어요. 자리를 만들면 받아져요'); }
+        setTimeout(() => this.giftArrived(g, done), 20000); return;
+      }
+      this.boxWarned = false;
+      if (out) {
+        s.monggles = s.monggles.filter(x => x.id !== out.monId);
+        s.party = s.party.filter(id => id !== out.monId);
+        s.coupleOut = null;
+      }
+      const baby = this.addBaby(g.res, g.shiny, g.mon?.sp);
+      if (!s.party.length) s.party.push(baby.id);
+      this.game.syncParty(); this.save(); done(); this.renderTop();
+      this.coupleBorn(baby, g.from);
+      return;
+    }
+    done();
   }
 }
