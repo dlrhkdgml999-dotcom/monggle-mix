@@ -4,6 +4,7 @@ import { buildWorld } from './world.js';
 import { Game } from './game.js';
 import { UI } from './ui.js';
 import { Net } from './net.js';
+import { Sync } from './sync.js';
 import { makeHero, makeMonggle } from './models.js';
 import { unlock as unlockSound, sfx } from './sfx.js';
 import { newSave, loadLocal, save, checkLogin, pinLogin, loadCloud, normalize, currentUser, useProfileStorage, profileOfUser } from './save.js';
@@ -41,7 +42,7 @@ addEventListener('resize', resize); resize();
 const world = buildWorld(scene);
 
 // ---------- 시작 화면 (비밀번호 4자리) ----------
-let state = null, game, ui, net;
+let state = null, game, ui, net, sync;
 let pin = '';
 const dots = [...document.querySelectorAll('.dots i')];
 const who = $('#who');
@@ -100,10 +101,15 @@ function begin(s) {
   net = new Net(ui);
   ui.attach(game, net);
   game.onPartyChange = () => net.updateParty();
+  sync = new Sync(game, ui, state);
+  net.onLink = (link, amHost) => sync.attach(link, amHost);
+  net.onUnlink = () => sync.detach();
   net.start(state);
+  if (params.get('fake')) fakeLink(params.get('fake'));
+  if (params.get('fakedb')) import('./fakedb.js').then(m => net.startWith(m.makeFakeDb('fake-' + params.get('fakedb')), null, 'fake-' + params.get('fakedb')));
   ui.toast(`어서 와요, ${state.name}! 땅을 누르면 걸어가고, 몽글이를 누르면 같이 싸워요`);
   save(state);
-  window.__game = game; window.__net = net; // 디버그용
+  window.__game = game; window.__net = net; game.ui = ui; // 디버그용
 }
 
 // ---------- 입력 ----------
@@ -131,10 +137,30 @@ canvas.addEventListener('pointermove', e => {
 addEventListener('pointerup', () => pressing = false);
 addEventListener('pointercancel', () => pressing = false);
 
+// 자동 테스트용: 같은 브라우저의 두 탭을 BroadcastChannel로 연결 (실제 계정 없이)
+function fakeLink(side) {
+  const bc = new BroadcastChannel('monggle-test');
+  const link = { send: o => bc.postMessage(o), onmessage: null };
+  let up = false;
+  bc.onmessage = e => {
+    const m = e.data;
+    if (m.t === 'hello') { bc.postMessage({ t: 'hello2' }); if (!up) { up = true; sync.attach(link, side === 'A'); } return; }
+    if (m.t === 'hello2') { if (!up) { up = true; sync.attach(link, side === 'A'); } return; }
+    link.onmessage?.(m);
+  };
+  bc.postMessage({ t: 'hello' });
+}
+
 // ---------- 상대방 캐릭터 ----------
 let partner = null;
+function partnerSource() {
+  const sp = sync?.partner;
+  if (sp) return { name: sp.n, look: sp.l, x: sp.h[0], z: sp.h[1], face: sp.h[2], dead: sp.h[3],
+    party: sp.pets.map(q => ({ sp: q[1], shiny: !!q[2] })), pets: sp.pets };
+  return net?.partner();
+}
 function updatePartner(dt) {
-  const p = net?.partner();
+  const p = partnerSource();
   if (!p || p.x == null) {
     if (partner) { scene.remove(partner.model.root); partner.pets.forEach(q => scene.remove(q.model.root)); ui.detachPartner(); partner = null; }
     return;
@@ -165,12 +191,25 @@ function updatePartner(dt) {
   else if (d > 0.05) {
     const step = Math.min(d, 6 * dt);
     r.x += dx / d * step; r.z += dz / d * step;
-    partner.model.root.rotation.y = Math.atan2(dx, dz);
+    partner.model.root.rotation.y = p.face ?? Math.atan2(dx, dz);
   }
   partner.t += dt;
   const hop = d > 0.1 ? Math.abs(Math.sin(partner.t * 11)) * 0.2 : 0;
   partner.model.body.position.y = hop;
   const n = partner.pets.length, face = partner.model.root.rotation.y;
+  if (p.pets) {
+    // 같이 사냥 중: 상대 몽글이의 실제 위치
+    partner.pets.forEach((q, i) => {
+      const src = p.pets[i]; if (!src) return;
+      const qp = q.model.root.position, qx = src[3] - qp.x, qz = src[4] - qp.z, qd = Math.hypot(qx, qz);
+      q.t += dt;
+      q.model.root.visible = !src[6];
+      if (qd > 8) qp.set(src[3], 0, src[4]); else { qp.x += qx * Math.min(1, dt * 10); qp.z += qz * Math.min(1, dt * 10); }
+      q.model.root.rotation.y = src[5];
+      q.model.body.position.y = src[7] ? Math.abs(Math.sin(q.t * 11)) * 0.2 : 0;
+    });
+    return;
+  }
   for (const q of partner.pets) {
     const back = face + Math.PI + (q.slot - (n - 1) / 2) * 0.9;
     const tx = r.x + Math.sin(back) * 1.6, tz = r.z + Math.cos(back) * 1.6;
@@ -202,6 +241,7 @@ function loop() {
     camera.lookAt(look3);
     sun.position.set(hp.x + 8, 18, hp.z + 6); sun.target.position.set(hp.x, 0, hp.z);
     updatePartner(dt);
+    sync.update(dt);
     ui.tick();
     net.sendPos(hp, game.lastZone?.id, game.hero.hp, game.hero.maxHp);
     saveT += dt;

@@ -2,6 +2,12 @@
 let ac = null;
 let muted = localStorage.getItem('monggle-mute') === '1';
 
+// 아이폰: 게임 소리가 유튜브·멜론 음악을 멈추지 않고 섞이게 (사파리 16.4+)
+export function setAudioMode(mode) {
+  try { if (navigator.audioSession) navigator.audioSession.type = mode; } catch {}
+}
+setAudioMode('ambient');
+
 function ctx() {
   if (!ac) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null; ac = new AC(); }
   if (ac.state === 'suspended') ac.resume();

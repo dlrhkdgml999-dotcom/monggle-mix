@@ -37,6 +37,8 @@ export function icon(sp, shiny = false) {
 }
 
 const elemTags = sp => SPECIES[sp].elems.map(e => `<span class="el" style="--c:${ELEM[e].color}">${ELEM[e].icon}${ELEM[e].name}</span>`).join('');
+// 받침에 맞는 조사 (하은과 / 광희와)
+export const josa = (w, a, b) => { const c = (w || '').charCodeAt((w || '').length - 1); return w + (c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 ? a : b); };
 const ROLE = { melee: '근거리', ranged: '원거리', tank: '탱커', healer: '힐러', aoe: '범위' };
 
 export class UI {
@@ -62,6 +64,7 @@ export class UI {
         <div id="dust" class="pill">✦ <b>0</b></div>
         <div id="online" class="pill off"><i class="dot"></i><span>혼자 노는 중</span></div>
         <button id="micBtn" class="round" aria-label="마이크">🎤</button>
+        <button id="musicBtn" class="round" aria-label="음악">🎵</button>
         <button id="muteBtn" class="round" aria-label="소리">🔊</button>
       </div>
       <canvas id="minimap" width="240" height="180"></canvas>
@@ -95,6 +98,7 @@ export class UI {
       this.emote(this.game.hero.model.root, b.textContent);
       this.net.sendEmote(b.textContent);
     });
+    $('#musicBtn').onclick = () => this.openMusic();
     const mb = $('#muteBtn');
     const drawMute = () => { mb.textContent = isMuted() ? '🔇' : '🔊'; };
     drawMute();
@@ -211,7 +215,7 @@ export class UI {
 
   // ---------- 머리 위 체력바 ----------
   makeBar(u) {
-    if (u.kind === 'hero' || u.kind === 'pet') return null;
+    if (u.kind === 'hero' || u.kind === 'pet' || u.kind === 'ally') return null;
     const b = h('div', 'ubar ' + u.kind, `<span class="nm">${u.kind === 'wild' ? `Lv${u.lv} ` : ''}${u.name}</span><div class="bar hp sm"><i></i></div>`);
     this.bars.appendChild(b);
     return b;
@@ -257,7 +261,7 @@ export class UI {
   toast(msg) {
     const t = $('#toast');
     const e = h('div', 'tmsg', msg); t.appendChild(e);
-    while (t.children.length > 3) t.firstChild.remove();
+    while (t.children.length > 2) t.firstChild.remove();
     setTimeout(() => e.classList.add('out'), 2600);
     setTimeout(() => e.remove(), 3100);
   }
@@ -266,6 +270,65 @@ export class UI {
     e.innerHTML = z ? z.name + (z.lv ? `<small>Lv ${z.lv[0]}~${z.lv[1]}</small>` : '') : '';
     e.classList.remove('show'); void e.offsetWidth;
     if (z) e.classList.add('show');
+  }
+
+  // ---------- 🎵 음악 (유튜브 링크) ----------
+  openMusic() {
+    const last = localStorage.getItem('monggle-music') || '';
+    const b = this.openPanel('🎵 음악 들으며 하기');
+    b.insertAdjacentHTML('beforeend', `
+      <p class="hint" style="text-align:left">유튜브 앱에서 노래나 재생목록의 <b>공유 → 링크 복사</b>를 한 뒤 아래에 붙여 넣어요. 게임 화면 구석의 작은 창에서 나와요.</p>
+      <input id="ytIn" class="tin" placeholder="https://youtu.be/... 또는 재생목록 링크" value="${last.replace(/"/g, '')}">
+      <div class="btns center"><button class="btn" id="ytGo">재생</button>${this.ytOpen ? '<button class="btn ghost" id="ytStop">끄기</button>' : ''}</div>
+      <p class="hint">유튜브 프리미엄이 있으면 유튜브 앱을 켜 두고 게임으로 와도 계속 나와요. 게임 효과음은 음악을 멈추지 않아요.</p>`);
+    $('#ytGo', b).onclick = () => {
+      const url = $('#ytIn', b).value.trim();
+      const src = this.ytEmbed(url);
+      if (!src) { this.toast('유튜브 링크가 아닌 것 같아요'); return; }
+      localStorage.setItem('monggle-music', url);
+      this.showPlayer(src);
+      this.closePanel();
+    };
+    const st = $('#ytStop', b); if (st) st.onclick = () => { this.hidePlayer(); this.closePanel(); };
+  }
+  ytEmbed(url) {
+    try {
+      const u = new URL(url.startsWith('http') ? url : 'https://' + url);
+      const list = u.searchParams.get('list');
+      let id = u.hostname.includes('youtu.be') ? u.pathname.slice(1) : (u.searchParams.get('v') || (u.pathname.match(/\/(shorts|embed|live)\/([\w-]{6,})/) || [])[2]);
+      const q = 'autoplay=1&playsinline=1&rel=0';
+      if (id) return `https://www.youtube.com/embed/${id}?${q}${list ? '&list=' + list : '&loop=1&playlist=' + id}`;
+      if (list) return `https://www.youtube.com/embed/videoseries?list=${list}&${q}`;
+    } catch {}
+    return null;
+  }
+  showPlayer(src) {
+    let w = $('#ytWin');
+    if (!w) {
+      w = h('div', '', `<div class="bar2"><span>🎵 음악</span><small>끌어서 옮기기</small><button class="x2">✕</button></div><iframe allow="autoplay; encrypted-media" allowfullscreen></iframe>`);
+      w.id = 'ytWin';
+      document.body.appendChild(w);
+      $('.x2', w).onclick = () => this.hidePlayer();
+      // 끌어서 옮기기
+      const bar = $('.bar2', w);
+      bar.addEventListener('pointerdown', e => {
+        if (e.target.closest('.x2')) return;
+        const r = w.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+        const mv = ev => { w.style.left = Math.max(0, Math.min(innerWidth - r.width, ev.clientX - dx)) + 'px'; w.style.top = Math.max(0, Math.min(innerHeight - 40, ev.clientY - dy)) + 'px'; };
+        const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); };
+        addEventListener('pointermove', mv); addEventListener('pointerup', up);
+      });
+    }
+    $('iframe', w).src = src;
+    w.classList.remove('hidden');
+    this.ytOpen = true;
+    this.toast('노래가 안 나오면 작은 창의 ▶를 한 번 눌러 주세요');
+  }
+  hidePlayer() {
+    const w = $('#ytWin'); if (!w) return;
+    $('iframe', w).src = 'about:blank';
+    w.classList.add('hidden');
+    this.ytOpen = false;
   }
 
   // ---------- 감정표현 ----------
@@ -294,12 +357,17 @@ export class UI {
   renderOnline(p) {
     const o = $('#online');
     o.classList.toggle('off', !p);
-    $('#online span').textContent = p ? `${p.name} 접속 중` : (this.net?.on ? '상대 오프라인' : '혼자 노는 중');
+    $('#online span').textContent = p ? (this.linked ? `${josa(p.name, '과', '와')} 같이 사냥 중` : `${p.name} 접속 중`) : (this.net?.on ? '상대 오프라인' : '혼자 노는 중');
   }
   renderCall(st) {
     const b = $('#micBtn');
     b.dataset.st = st;
     b.title = { on: '통화 중', wait: '연결 중…', 'their-off': '상대 마이크 꺼짐', alone: '상대가 접속하면 연결돼요', off: '마이크 꺼짐' }[st];
+  }
+  setLinked(on) {
+    $('#online').classList.toggle('linked', on);
+    this.linked = on;
+    this.renderOnline(this.net?.partner() || (on ? { name: this.game?.sync?.partner?.n || '상대' } : null));
   }
   setMyVoice(lv) { $('#micBtn').style.setProperty('--lv', Math.min(1, lv * 4)); }
   setPartnerVoice(lv) { this.partnerVoice = lv; if (this.partnerTag) this.partnerTag.classList.toggle('talk', lv > 0.06); }

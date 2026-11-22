@@ -82,6 +82,8 @@ button { font-family: inherit; color: inherit; border: 0; cursor: pointer; }
 #online .dot { width: 11px; height: 11px; border-radius: 50%; background: #3ee06a; box-shadow: 0 0 0 3px rgba(62, 224, 106, .25), 0 0 10px #3ee06a; animation: glow 1.6s infinite; }
 #online.off .dot { background: #c9c2d4; box-shadow: none; animation: none; }
 #online.off { color: var(--soft); }
+#online.linked { background: #eafff0; }
+#online.linked .dot { background: #ff8fb4; box-shadow: 0 0 0 3px rgba(255, 143, 180, .3), 0 0 10px #ff8fb4; }
 @keyframes glow { 50% { box-shadow: 0 0 0 6px rgba(62, 224, 106, .1), 0 0 16px #3ee06a; } }
 .round { width: 46px; height: 46px; border-radius: 50%; background: var(--card); font-size: 22px; box-shadow: 0 3px 10px rgba(90, 60, 130, .15); display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
 .round small { font-size: 11px; margin-top: 2px; }
@@ -121,7 +123,7 @@ button { font-family: inherit; color: inherit; border: 0; cursor: pointer; }
 #zoneName.show { animation: zone 2.6s; }
 #zoneName small { display: block; text-align: center; font-size: 16px; }
 @keyframes zone { 15%, 75% { opacity: 1; transform: translate(-50%, 0); } 0% { opacity: 0; transform: translate(-50%, 10px); } 100% { opacity: 0; } }
-#toast { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; width: min(60vw, 520px); }
+#toast { position: absolute; left: 50%; bottom: 92px; transform: translateX(-50%); display: flex; flex-direction: column-reverse; gap: 6px; align-items: center; width: min(46vw, 440px); }
 .tmsg { background: rgba(74, 59, 92, .85); color: #fff; padding: 7px 14px; border-radius: 14px; font-size: 14px; text-align: center; animation: tin .3s; transition: opacity .5s; }
 .tmsg.out { opacity: 0; }
 @keyframes tin { from { transform: translateY(-8px); opacity: 0; } }
@@ -226,3 +228,11 @@ button { font-family: inherit; color: inherit; border: 0; cursor: pointer; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
   .mcard img { width: 60px; height: 60px; }
 }
+
+/* ---------- 음악 창 ---------- */
+.tin { width: 100%; font-family: inherit; font-size: 15px; border: 2px solid #eadcff; border-radius: 12px; padding: 9px 12px; color: var(--ink); outline: none; margin: 8px 0; user-select: text; -webkit-user-select: text; }
+#ytWin { position: fixed; left: 190px; top: 70px; width: 200px; z-index: 8; background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 6px 20px rgba(60, 30, 100, .3); }
+#ytWin .bar2 { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 13px; background: #f4eefc; cursor: move; touch-action: none; }
+#ytWin .bar2 small { color: var(--soft); font-size: 10px; flex: 1; }
+#ytWin .x2 { background: none; font-size: 14px; padding: 2px 4px; }
+#ytWin iframe { display: block; width: 200px; height: 200px; border: 0; background: #000; }

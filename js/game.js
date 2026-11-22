@@ -24,6 +24,9 @@ export class Game {
     this.projectiles = [];
     this.drops = [];
     this.parts = [];
+    this.mode = 'solo';   // solo | host | guest (같이 사냥)
+    this.nidSeq = 1;
+    this.mirrors = new Map();
     this.time = 0;
     this.buffAtk = 0; // 응원 남은 시간
     this.heroSkillCd = 0;
@@ -77,6 +80,7 @@ export class Game {
   }
 
   addUnit(u) {
+    if (u.kind === 'wild' && !u.nid) u.nid = this.nidSeq++;
     this.scene.add(u.model.root);
     u.bar = this.ui.makeBar(u);
     this.units.push(u);
@@ -163,7 +167,7 @@ export class Game {
   }
 
   // 보스 대왕버섯 (들판 동쪽 숲 끝, 쓰러지면 10분 뒤 다시)
-  spawnBoss() {
+  makeBossModel() {
     const model = makeMonggle('saessak');
     model.body.scale.setScalar(2.5); model.base = 2.5;
     model.shadow.scale.setScalar(2.4);
@@ -173,6 +177,11 @@ export class Game {
     model.body.traverse(o => { if (o.isMesh && o.material.color && o.material.color.getHex() === 0xff7b7b) o.material = toon(0xd94a6a); });
     const hit = new THREE.Mesh(new THREE.SphereGeometry(1.8, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
     hit.position.y = 1.3; model.root.add(hit);
+    return { model, hit };
+  }
+
+  spawnBoss() {
+    const { model, hit } = this.makeBossModel();
     const home = new THREE.Vector3(50, 0, 12);
     model.root.position.copy(home);
     const zone = ZONES.find(z => z.id === 'field');
@@ -193,7 +202,7 @@ export class Game {
       u.sporeT = 6;
       this.ui.ring(p, '#c8ffb0', 3.8);
       sfx.boss();
-      for (const o of this.units) if ((o.kind === 'hero' || o.kind === 'pet') && !o.dead && dist2(o.model.root.position, p) < 3.8) {
+      for (const o of this.units) if ((o.kind === 'hero' || o.kind === 'pet' || o.kind === 'ally') && !o.dead && dist2(o.model.root.position, p) < 3.8) {
         this.damage(u, o, 0.8); o.buffs.slow = 2.5;
       }
     }
@@ -206,6 +215,154 @@ export class Game {
       }
     }
   }
+
+  // ---------- 같이 사냥 (guest 쪽) ----------
+  enterGuest() {
+    this.mode = 'guest';
+    for (const u of [...this.units]) if (u.kind === 'wild') this.removeUnit(u);
+    this.boss = null;
+    this.mirrors = new Map();
+  }
+
+  leaveGuest() {
+    for (const u of [...this.units]) if (u.kind === 'wild') this.removeUnit(u);
+    this.mirrors = new Map();
+    this.mode = 'solo';
+    for (const z of ZONES) if (z.spawns) for (let i = 0; i < z.count; i++) this.spawnWild(z);
+    this.spawnBoss();
+    this.ui.toast('같이 사냥 연결이 끊겼어요. 혼자 사냥으로 돌아가요');
+  }
+
+  applyWorld(list) {
+    const seen = new Set();
+    for (const [nid, sp, lv, x, z, face, hp, maxHp, f] of list) {
+      seen.add(nid);
+      let u = this.mirrors.get(nid);
+      const dead = f & 1, boss = f & 2;
+      if (!u) {
+        if (dead) continue;
+        let model, hit;
+        if (boss) ({ model, hit } = this.makeBossModel());
+        else {
+          model = makeMonggle(sp); model.setColor(0);
+          hit = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
+          hit.position.y = 0.6; model.root.add(hit);
+        }
+        model.root.position.set(x, 0, z);
+        const S = SPECIES[sp];
+        u = this.addUnit({
+          kind: 'wild', mirror: true, nid, sp, lv, boss: !!boss, minion: !!(f & 8), name: boss ? '대왕버섯' : S.name,
+          model, hit, elems: S.elems, role: S.role, hp, maxHp, atk: 0, range: 0, speed: 0,
+          buffs: {}, dead: false, face, tx: x, tz: z, radius: boss ? 1.3 : 0,
+          zone: ZONES.find(zz => Math.hypot(x - zz.x, z - zz.z) < zz.r) || ZONES[1],
+        });
+        hit.userData.unit = u;
+        this.mirrors.set(nid, u);
+        if (boss) this.boss = u;
+      }
+      u.tx = x; u.tz = z; u.tface = face; u.lv = lv;
+      u.moving = !!(f & 4);
+      if (!u.dead) { u.hp = hp; u.maxHp = maxHp; }
+      if (dead && !u.dead) { u.dead = true; u.fadeT = 1; }
+    }
+    for (const [nid, u] of this.mirrors) {
+      if (!seen.has(nid)) { this.mirrors.delete(nid); if (u.kind === 'wild') this.removeUnit(u); }
+    }
+  }
+
+  updateMirror(u, dt) {
+    const p = u.model.root.position;
+    if (u.dead) {
+      if (u.fadeT > 0) { u.fadeT -= dt; u.model.root.scale.setScalar(Math.max(0.01, u.fadeT)); if (u.fadeT <= 0) u.model.root.visible = false; }
+      return;
+    }
+    const dx = u.tx - p.x, dz = u.tz - p.z, d = Math.hypot(dx, dz);
+    if (d > 8) p.set(u.tx, 0, u.tz);
+    else p.x += dx * Math.min(1, dt * 10), p.z += dz * Math.min(1, dt * 10);
+    u.face = u.tface ?? u.face;
+  }
+
+  // host가 "몬스터가 쓰러졌어요"를 알려 줌
+  remoteKill(m) {
+    const u = this.mirrors.get(m.id);
+    if (!u || u.kind !== 'wild') return;
+    const near = Math.hypot(u.model.root.position.x - this.hero.model.root.position.x, u.model.root.position.z - this.hero.model.root.position.z) < 14;
+    const helped = near || (u.hitByMe && this.time - u.hitByMe < 20);
+    u.dead = true; u.hp = 0;
+    for (const o of this.units) if (o.target === u) o.target = null;
+    if (!helped) { u.fadeT = 1; return; }
+    if (u.boss) {
+      this.state.dust += 40; this.state.bossKills = (this.state.bossKills || 0) + 1;
+      this.gainHeroExp(320);
+      for (const p of this.units) if (p.kind === 'pet' && !p.dead) this.gainPetExp(p, 320);
+      this.ui.floatText(u.model.root.position, '✦40', 'lvup', 1.4);
+      this.ui.toast('🎉 둘이서 대왕버섯을 물리쳤어요! 반짝가루 40개');
+      sfx.levelUp(); this.burst(u.model.root.position, 0xfff27a, 24);
+      u.fadeT = 1; this.ui.renderTop(); this.ui.save();
+      return;
+    }
+    this.reward(u);
+    const rate = !this.state.dex[u.sp] ? CAPTURE_RATE_NEW : CAPTURE_RATE;
+    if (!u.minion && Math.random() < rate) {
+      // 나만의 친구로 바꾸기 (host 화면과 상관없이)
+      this.mirrors.delete(m.id);
+      u.mirror = false;
+      this.makeFriend(u);
+    } else u.fadeT = 1;
+  }
+
+  // host가 "몬스터가 너를 때렸어"를 알려 줌
+  remoteHurt(m) {
+    const to = m.who === 'h' ? this.hero : this.units.find(u => u.kind === 'pet' && u.slot === m.who);
+    if (!to || to.dead) return;
+    let dmg = m.dmg;
+    if (to.buffs.guard > 0) dmg *= 0.5;
+    if (this.shieldT > 0) dmg *= 0.5;
+    dmg = Math.max(1, Math.round(dmg));
+    to.hp -= dmg; to.hurtT = 0.15;
+    this.ui.floatText(to.model.root.position, '-' + dmg, 'ouch');
+    if (to.kind === 'hero') sfx.ouch();
+    if (to.hp <= 0) this.kill(to);
+  }
+
+  // ---------- 같이 사냥 (host 쪽) ----------
+  updateAllies(m) {
+    this.allies = this.allies || new Map();
+    const want = new Map();
+    want.set('h', { x: m.h[0], z: m.h[1], dead: m.h[3], hp: m.h[4], maxHp: m.h[5], elems: [] });
+    for (const [slot, sp, , x, z, , dead, , hp, maxHp] of m.pets || []) want.set(slot, { x, z, dead, hp, maxHp, elems: SPECIES[sp]?.elems || [] });
+    for (const [who, v] of want) {
+      let a = this.allies.get(who);
+      if (!a) {
+        const root = new THREE.Object3D(), body = new THREE.Object3D(); root.add(body);
+        a = this.addUnit({ kind: 'ally', who, model: { root, body, shadow: body, setColor() {}, flash() {} }, buffs: {}, elems: v.elems, atk: 0 });
+        this.allies.set(who, a);
+      }
+      a.model.root.position.set(v.x, 0, v.z);
+      a.dead = !!v.dead; a.hp = v.hp; a.maxHp = v.maxHp; a.elems = v.elems;
+    }
+    for (const [who, a] of this.allies) if (!want.has(who)) { this.removeUnit(a); this.allies.delete(who); }
+  }
+
+  removeAllies() {
+    for (const a of this.allies?.values() || []) this.removeUnit(a);
+    this.allies = new Map();
+    for (const u of this.units) if (u.target?.kind === 'ally') u.target = null;
+  }
+
+  // guest가 "내가 이 몬스터를 때렸어"를 알려 줌
+  remoteHit(m) {
+    const u = this.units.find(x => x.kind === 'wild' && x.nid === m.id && !x.dead);
+    if (!u) return;
+    u.hp -= m.dmg; u.hurtT = 0.15;
+    this.ui.floatText(u.model.root.position, '-' + m.dmg, 'hit');
+    this.burst(u.model.root.position, 0xffffff, 4);
+    const ally = this.allies?.get('h');
+    if (!u.target && ally && !ally.dead) u.target = ally;
+    if (u.hp <= 0) this.kill(u, ally);
+  }
+
+  remoteFx() {}
 
   // ---------- 입력 ----------
   tapUnit(u) {
@@ -227,7 +384,7 @@ export class Game {
   pickables() { return this.units.filter(u => (u.kind === 'wild' && !u.dead) || u.kind === 'friend').map(u => u.hit); }
 
   // ---------- 전투 ----------
-  enemyOf(u) { return u.kind === 'wild' ? ['hero', 'pet'] : ['wild']; }
+  enemyOf(u) { return u.kind === 'wild' ? ['hero', 'pet', 'ally'] : ['wild']; }
 
   nearestEnemy(u, maxD) {
     let best = null, bd = maxD;
@@ -240,7 +397,7 @@ export class Game {
   }
 
   damage(from, to, mult = 1, { silent = false } = {}) {
-    if (!to || to.dead) return 0;
+    if (!to || to.dead || to.removed) return 0;
     let atk = from.atk * mult;
     if (from.kind !== 'wild' && this.buffAtk > 0) atk *= 1.3;
     const em = elemMult(from.elems.length ? from.elems : ['none'], to.elems.length ? to.elems : ['none']);
@@ -248,6 +405,22 @@ export class Game {
     if (to.buffs.guard > 0) dmg *= 0.5;
     if (to.kind !== 'wild' && this.shieldT > 0) dmg *= 0.5;
     dmg = Math.max(1, Math.round(dmg));
+    // guest: host의 몬스터를 때림 → host에게 알리고 화면엔 미리 보여 주기
+    if (to.mirror) {
+      this.sync?.send({ t: 'hit', id: to.nid, dmg });
+      to.hitByMe = this.time;
+      to.hp = Math.max(1, to.hp - dmg);
+      to.hurtT = 0.15;
+      if (!silent) this.ui.floatText(to.model.root.position, '-' + dmg, em > 1 ? 'big' : 'hit');
+      sfx.hit(em > 1); this.burst(to.model.root.position, em > 1 ? 0xffe066 : 0xffffff, em > 1 ? 9 : 5);
+      return dmg;
+    }
+    // host: 몬스터가 상대방(guest)을 때림 → guest에게 알리기
+    if (to.kind === 'ally') {
+      this.sync?.send({ t: 'hurt', who: to.who, dmg });
+      if (!silent) this.ui.floatText(to.model.root.position, '-' + dmg, 'ouch');
+      return dmg;
+    }
     to.hp -= dmg;
     to.hurtT = 0.15;
     if (!silent) this.ui.floatText(to.model.root.position, '-' + dmg, em > 1 ? 'big' : (to.kind === 'wild' ? 'hit' : 'ouch'));
@@ -294,6 +467,7 @@ export class Game {
     if (u.dead) return;
     u.dead = true;
     u.hp = 0;
+    if (u.kind === 'wild' && this.mode === 'host') this.sync?.send({ t: 'kill', id: u.nid });
     if (u.kind === 'wild' && u.boss) {
       this.state.dust += 40; this.state.bossKills = (this.state.bossKills || 0) + 1;
       this.gainHeroExp(320);
@@ -312,7 +486,7 @@ export class Game {
       const isNew = !this.state.dex[u.sp];
       const rate = isNew ? CAPTURE_RATE_NEW : CAPTURE_RATE;
       if (Math.random() < rate) this.makeFriend(u);
-      else if (u.minion) { u.fadeT = 1; setTimeout(() => this.removeUnit(u), 1200); }
+      else if (u.minion || u.mirror) { u.fadeT = 1; if (!u.mirror) setTimeout(() => this.removeUnit(u), 1200); }
       else { u.fadeT = 1; setTimeout(() => this.respawn(u), 9000); }
       for (const o of this.units) if (o.target === u) o.target = null;
     } else if (u.kind === 'pet') {
@@ -326,7 +500,7 @@ export class Game {
   }
 
   respawn(u) {
-    if (u.removed) return;
+    if (u.removed || this.mode === 'guest') return;
     const z = u.zone;
     this.removeUnit(u);
     this.spawnWild(z, this.hero.model.root.position);
@@ -407,7 +581,7 @@ export class Game {
     this.ui.toast(isNew ? `✨ 새 친구! ${u.name}를 도감에 등록했어요` : `${u.name}가 친구가 됐어요!`);
     // 파티에 빈자리가 있으면 바로 데려가기
     if (s.party.length < this.partySize()) { s.party.push(m.id); this.syncParty(); }
-    const z = u.zone, minion = u.minion;
+    const z = u.zone, minion = u.minion || this.mode === 'guest';
     this.removeUnit(u);
     if (!minion) setTimeout(() => this.spawnWild(z, this.hero.model.root.position), 6000);
     this.refreshVivid();
@@ -480,7 +654,7 @@ export class Game {
     if (this.buffAtk > 0) this.buffAtk -= dt;
     if (this.heroSkillCd > 0) this.heroSkillCd -= dt;
     if (this.shieldT > 0) this.shieldT -= dt;
-    if (this.bossT > 0) { this.bossT -= dt; if (this.bossT <= 0) { this.spawnBoss(); this.ui.toast('🍄 말랑 들판 끝에 대왕버섯이 나타났어요!'); } }
+    if (this.bossT > 0 && this.mode !== 'guest') { this.bossT -= dt; if (this.bossT <= 0) { this.spawnBoss(); this.ui.toast('🍄 말랑 들판 끝에 대왕버섯이 나타났어요!'); } }
 
     const zone = this.zoneAt(this.hero.model.root.position);
     if (zone !== this.lastZone) { this.lastZone = zone; this.ui.showZone(zone); }
@@ -490,7 +664,9 @@ export class Game {
       for (const k in u.buffs) if (u.buffs[k] > 0) u.buffs[k] -= dt;
       if (u.kind === 'hero') this.updateHero(u, dt, zone);
       else if (u.kind === 'pet') this.updatePet(u, dt, zone);
+      else if (u.kind === 'wild' && u.mirror) this.updateMirror(u, dt);
       else if (u.kind === 'wild') this.updateWild(u, dt);
+      else if (u.kind === 'ally') continue;
       else if (u.kind === 'friend') this.updateFriend(u, dt);
       this.animate(u, dt);
     }
@@ -654,7 +830,7 @@ export class Game {
     if (Math.random() < dt * 3) this.ui.sparkle(p);
     if (u.friendT <= 0) {
       this.ui.toast(`${u.name}가 숲으로 돌아갔어요`);
-      const z = u.zone, minion = u.minion; this.removeUnit(u); if (!minion) setTimeout(() => this.spawnWild(z, hp), 5000);
+      const z = u.zone, minion = u.minion || this.mode === 'guest'; this.removeUnit(u); if (!minion) setTimeout(() => this.spawnWild(z, hp), 5000);
     }
   }
 
