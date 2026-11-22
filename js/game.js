@@ -3,6 +3,9 @@ import * as THREE from '../lib/three.min.js';
 import { SPECIES, ZONES, elemMult, expToNext, MAX_LV, BOX_MAX, CAPTURE_RATE, CAPTURE_RATE_NEW } from './data.js';
 import { makeMonggle, makeHero, toon } from './models.js';
 import { clampToWorld, SPAWN, CAULDRON } from './world.js';
+import { sfx } from './sfx.js';
+
+const PART_GEO = new THREE.IcosahedronGeometry(0.07, 0);
 
 const V = new THREE.Vector3();
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -20,6 +23,7 @@ export class Game {
     this.units = [];
     this.projectiles = [];
     this.drops = [];
+    this.parts = [];
     this.time = 0;
     this.buffAtk = 0; // 응원 남은 시간
     this.heroSkillCd = 0;
@@ -28,6 +32,8 @@ export class Game {
     this.spawnHero();
     this.syncParty();
     for (const z of ZONES) if (z.spawns) for (let i = 0; i < z.count; i++) this.spawnWild(z);
+    this.bossT = 0;
+    this.spawnBoss();
     this.refreshVivid();
   }
 
@@ -85,6 +91,7 @@ export class Game {
       u.slot = i;
     });
     this.ui.renderParty();
+    this.onPartyChange?.();
   }
 
   removeUnit(u) {
@@ -124,9 +131,54 @@ export class Game {
     return u;
   }
 
+  // 보스 대왕버섯 (들판 동쪽 숲 끝, 쓰러지면 10분 뒤 다시)
+  spawnBoss() {
+    const model = makeMonggle('saessak');
+    model.body.scale.setScalar(2.5); model.base = 2.5;
+    model.shadow.scale.setScalar(2.4);
+    // 왕관
+    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.14, 6, 1, true), toon(0xffd34d, { emissive: 0xffb300, emissiveIntensity: 0.4, side: THREE.DoubleSide }));
+    crown.position.set(0, 0.86, 0); model.body.add(crown);
+    model.body.traverse(o => { if (o.isMesh && o.material.color && o.material.color.getHex() === 0xff7b7b) o.material = toon(0xd94a6a); });
+    const hit = new THREE.Mesh(new THREE.SphereGeometry(1.8, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
+    hit.position.y = 1.3; model.root.add(hit);
+    const home = new THREE.Vector3(50, 0, 12);
+    model.root.position.copy(home);
+    const zone = ZONES.find(z => z.id === 'field');
+    const u = this.addUnit({
+      kind: 'wild', boss: true, sp: 'saessak', name: '대왕버섯', lv: 14, model, elems: ['grass'], role: 'tank', zone,
+      range: 2.6, speed: 2.2, hp: 1500, maxHp: 1500, atk: 15, atkCd: 2, target: null, home, wanderT: 99,
+      buffs: {}, dead: false, face: -Math.PI / 2, hit, sporeT: 5, summoned: false, radius: 1.3,
+    });
+    hit.userData.unit = u;
+    this.boss = u;
+  }
+
+  updateBoss(u, dt) {
+    if (!u.target) return;
+    u.sporeT -= dt;
+    const p = u.model.root.position;
+    if (u.sporeT <= 0) {
+      u.sporeT = 6;
+      this.ui.ring(p, '#c8ffb0', 3.8);
+      sfx.boss();
+      for (const o of this.units) if ((o.kind === 'hero' || o.kind === 'pet') && !o.dead && dist2(o.model.root.position, p) < 3.8) {
+        this.damage(u, o, 0.8); o.buffs.slow = 2.5;
+      }
+    }
+    if (!u.summoned && u.hp < u.maxHp / 2) {
+      u.summoned = true;
+      this.ui.toast('대왕버섯이 새싹버섯들을 불렀어요!');
+      for (let i = 0; i < 3; i++) {
+        const m = this.spawnWild({ ...u.zone, spawns: ['saessak'], lv: [8, 10], x: p.x, z: p.z, r: 3 });
+        m.target = this.hero; m.minion = true;
+      }
+    }
+  }
+
   // ---------- 입력 ----------
   tapUnit(u) {
-    if (u.kind === 'wild' && !u.dead) { this.hero.target = u; this.hero.moveTo = null; this.flashMarker(u.model.root.position, 0xff8080); return; }
+    if (u.kind === 'wild' && !u.dead) { sfx.tap(); this.hero.target = u; this.hero.moveTo = null; this.flashMarker(u.model.root.position, 0xff8080); return; }
     if (u.kind === 'friend') { this.befriend(u); }
   }
   tapGround(p, drag) {
@@ -168,6 +220,8 @@ export class Game {
     to.hp -= dmg;
     to.hurtT = 0.15;
     if (!silent) this.ui.floatText(to.model.root.position, '-' + dmg, em > 1 ? 'big' : (to.kind === 'wild' ? 'hit' : 'ouch'));
+    if (to.kind === 'wild') { sfx.hit(em > 1); this.burst(to.model.root.position, em > 1 ? 0xffe066 : 0xffffff, em > 1 ? 9 : 5); }
+    else if (to.kind === 'hero') sfx.ouch();
     // 맞으면 반격
     if (to.kind === 'wild' && !to.target) to.target = from;
     if (to.kind === 'pet' && !to.target) to.target = from;
@@ -175,7 +229,19 @@ export class Game {
     return dmg;
   }
 
+  burst(p, color, n = 6) {
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true });
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(PART_GEO, mat);
+      m.position.set(p.x, 0.6, p.z);
+      const a = Math.random() * Math.PI * 2, sp = rand(2, 4.5);
+      this.scene.add(m);
+      this.parts.push({ m, vx: Math.cos(a) * sp, vy: rand(2, 5), vz: Math.sin(a) * sp, t: 0.5 });
+    }
+  }
+
   shoot(from, to, mult, color, big = false) {
+    if (from.kind !== 'wild') sfx.shoot();
     const m = new THREE.Mesh(new THREE.SphereGeometry(big ? 0.25 : 0.14, 10, 8),
       toon(color, { emissive: color, emissiveIntensity: 0.6 }));
     m.position.copy(from.model.root.position).add(V.set(0, 0.6, 0));
@@ -196,11 +262,25 @@ export class Game {
     if (u.dead) return;
     u.dead = true;
     u.hp = 0;
+    if (u.kind === 'wild' && u.boss) {
+      this.state.dust += 40; this.state.bossKills = (this.state.bossKills || 0) + 1;
+      this.gainHeroExp(320);
+      for (const p of this.units) if (p.kind === 'pet' && !p.dead) this.gainPetExp(p, 320);
+      this.ui.floatText(u.model.root.position, '✦40', 'lvup', 1.4);
+      this.ui.toast('🎉 대왕버섯을 물리쳤어요! 반짝가루 40개');
+      sfx.levelUp(); this.burst(u.model.root.position, 0xfff27a, 24);
+      u.fadeT = 1; this.bossT = 600;
+      for (const o of this.units) if (o.target === u) o.target = null;
+      this.ui.renderTop(); this.ui.save();
+      setTimeout(() => this.removeUnit(u), 1500);
+      return;
+    }
     if (u.kind === 'wild') {
       this.reward(u);
       const isNew = !this.state.dex[u.sp];
       const rate = isNew ? CAPTURE_RATE_NEW : CAPTURE_RATE;
       if (Math.random() < rate) this.makeFriend(u);
+      else if (u.minion) { u.fadeT = 1; setTimeout(() => this.removeUnit(u), 1200); }
       else { u.fadeT = 1; setTimeout(() => this.respawn(u), 9000); }
       for (const o of this.units) if (o.target === u) o.target = null;
     } else if (u.kind === 'pet') {
@@ -235,6 +315,7 @@ export class Game {
     const exp = Math.round(6 + u.lv * 3.5);
     const dust = 1 + Math.floor(Math.random() * 3) + Math.floor(u.lv / 6);
     this.state.dust += dust;
+    sfx.dust();
     this.ui.floatText(u.model.root.position, `✦${dust}`, 'dust', 0.4);
     this.gainHeroExp(exp);
     for (const p of this.units) if (p.kind === 'pet' && !p.dead) this.gainPetExp(p, exp);
@@ -251,6 +332,7 @@ export class Game {
       const st = heroStats(s.lv);
       this.hero.maxHp = st.maxHp; this.hero.atk = st.atk; this.hero.hp = st.maxHp;
       this.ui.floatText(this.hero.model.root.position, `Lv ${s.lv}!`, 'lvup', 1.2);
+      sfx.levelUp(); this.burst(this.hero.model.root.position, 0xfff27a, 14);
       if (s.lv === 15) { this.ui.toast('🎉 Lv15! 몽글이 칸이 하나 더 열렸어요'); this.ui.openBox(); }
     }
   }
@@ -265,6 +347,7 @@ export class Game {
       const st = petStats(m);
       u.maxHp = st.maxHp; u.atk = st.atk; u.hp = st.maxHp;
       this.ui.floatText(u.model.root.position, `Lv ${m.lv}!`, 'lvup', 1.0);
+      sfx.levelUp();
     }
   }
 
@@ -276,6 +359,7 @@ export class Game {
     u.colorT = 0;
     u.bar?.classList.add('friend');
     this.ui.floatText(u.model.root.position, '친구 하고 싶어해요! 터치!', 'friend', 1.3);
+    sfx.friend();
   }
 
   befriend(u) {
@@ -286,12 +370,13 @@ export class Game {
     const isNew = !s.dex[u.sp];
     s.dex[u.sp] = (s.dex[u.sp] || 0) + 1;
     this.ui.floatText(u.model.root.position, '♥', 'heart', 1.2);
+    sfx.befriend(); this.burst(u.model.root.position, 0xff8fb4, 14);
     this.ui.toast(isNew ? `✨ 새 친구! ${u.name}를 도감에 등록했어요` : `${u.name}가 친구가 됐어요!`);
     // 파티에 빈자리가 있으면 바로 데려가기
     if (s.party.length < this.partySize()) { s.party.push(m.id); this.syncParty(); }
-    const z = u.zone;
+    const z = u.zone, minion = u.minion;
     this.removeUnit(u);
-    setTimeout(() => this.spawnWild(z, this.hero.model.root.position), 6000);
+    if (!minion) setTimeout(() => this.spawnWild(z, this.hero.model.root.position), 6000);
     this.refreshVivid();
     this.ui.save();
   }
@@ -336,6 +421,7 @@ export class Game {
     }
     u.skillCd = sk.cd;
     u.lunge = 0.4;
+    if (sk.type === 'heal') sfx.heal(); else sfx.skill();
     this.ui.floatText(u.model.root.position, sk.name, 'skill', 0.9);
     return true;
   }
@@ -344,6 +430,7 @@ export class Game {
     if (this.heroSkillCd > 0 || this.hero.dead) return false;
     this.buffAtk = 6;
     this.heroSkillCd = 15;
+    sfx.cheer();
     for (const p of this.units) if ((p.kind === 'pet' || p.kind === 'hero') && !p.dead) this.ui.floatText(p.model.root.position, '힘내!', 'skill', 0.6);
     return true;
   }
@@ -360,6 +447,7 @@ export class Game {
     if (this.buffAtk > 0) this.buffAtk -= dt;
     if (this.heroSkillCd > 0) this.heroSkillCd -= dt;
     if (this.shieldT > 0) this.shieldT -= dt;
+    if (this.bossT > 0) { this.bossT -= dt; if (this.bossT <= 0) { this.spawnBoss(); this.ui.toast('🍄 말랑 들판 끝에 대왕버섯이 나타났어요!'); } }
 
     const zone = this.zoneAt(this.hero.model.root.position);
     if (zone !== this.lastZone) { this.lastZone = zone; this.ui.showZone(zone); }
@@ -382,6 +470,14 @@ export class Game {
         if (!p.to.dead && !p.to.removed) this.damage(p.from, p.to, p.mult);
         this.scene.remove(p.m); this.projectiles.splice(this.projectiles.indexOf(p), 1);
       } else p.m.position.addScaledVector(V.normalize(), Math.min(d, p.speed * dt));
+    }
+    // 파티클
+    for (let i = this.parts.length - 1; i >= 0; i--) {
+      const q = this.parts[i];
+      q.t -= dt; q.vy -= 12 * dt;
+      q.m.position.x += q.vx * dt; q.m.position.y = Math.max(0.05, q.m.position.y + q.vy * dt); q.m.position.z += q.vz * dt;
+      q.m.scale.setScalar(Math.max(0.01, q.t * 2.2));
+      if (q.t <= 0) { this.scene.remove(q.m); this.parts.splice(i, 1); }
     }
     // 표시
     if (this.marker.material.opacity > 0) { this.marker.material.opacity -= dt * 1.5; this.marker.scale.multiplyScalar(1 + dt * 0.8); }
@@ -418,7 +514,7 @@ export class Game {
     if (h.target && (h.target.dead || h.target.removed || h.target.kind !== 'wild')) h.target = null;
     if (h.target) {
       const tp = h.target.model.root.position;
-      if (this.moveToward(h, tp.x, tp.z, dt, h.range) && h.atkCd <= 0) { this.attack(h, h.target); h.atkCd = 0.75; }
+      if (this.moveToward(h, tp.x, tp.z, dt, h.range + (h.target.radius || 0)) && h.atkCd <= 0) { this.attack(h, h.target); h.atkCd = 0.75; }
     } else if (h.moveTo) {
       if (this.moveToward(h, h.moveTo.x, h.moveTo.z, dt, 0.15)) h.moveTo = null;
     } else h.moving = false;
@@ -460,7 +556,7 @@ export class Game {
     if (u.target && (u.target.dead || u.target.removed || u.target.kind !== 'wild')) u.target = null;
     if (u.target) {
       const tp = u.target.model.root.position;
-      if (this.moveToward(u, tp.x, tp.z, dt, u.range * 0.9) && u.atkCd <= 0) {
+      if (this.moveToward(u, tp.x, tp.z, dt, u.range * 0.9 + (u.target.radius || 0)) && u.atkCd <= 0) {
         this.attack(u, u.target); u.atkCd = u.role === 'healer' ? 1.6 : 1.1;
       }
     } else {
@@ -478,6 +574,7 @@ export class Game {
     }
     u.atkCd -= dt;
     if (u.target && (u.target.dead || u.target.removed)) u.target = null;
+    if (u.boss) this.updateBoss(u, dt);
     const p = u.model.root.position;
     if (u.target) {
       // 너무 멀리 끌려가면 집으로
@@ -514,7 +611,7 @@ export class Game {
     if (Math.random() < dt * 3) this.ui.sparkle(p);
     if (u.friendT <= 0) {
       this.ui.toast(`${u.name}가 숲으로 돌아갔어요`);
-      const z = u.zone; this.removeUnit(u); setTimeout(() => this.spawnWild(z, hp), 5000);
+      const z = u.zone, minion = u.minion; this.removeUnit(u); if (!minion) setTimeout(() => this.spawnWild(z, hp), 5000);
     }
   }
 
@@ -531,7 +628,8 @@ export class Game {
     if (u.kind === 'friend') { const h = Math.abs(Math.sin(t * 6)); y = h * 0.35; }
     if (u.lunge > 0) { u.lunge -= dt; m.body.position.z = Math.sin(u.lunge * 12) * 0.25; } else m.body.position.z = 0;
     m.body.position.y = y;
-    m.body.scale.set(sx, sy, sx);
+    const bs = m.base ?? (m.base = m.body.scale.x);
+    m.body.scale.set(sx * bs, sy * bs, sx * bs);
     if (u.sp === 'ggulbeol' || u.sp === 'gimmung') m.body.position.y += 0.15 + Math.sin(t * 3) * 0.06;
     m.body.traverse(o => { if (o.userData.wing) o.rotation.y = Math.sin(t * 30) * 0.5 * o.userData.wing; if (o.userData.puff) o.position.y = o.userData.puff + ((t * 0.4) % 0.3); });
     if (u.hurtT > 0) { u.hurtT -= dt; m.flash(true); if (u.hurtT <= 0) m.flash(false); }

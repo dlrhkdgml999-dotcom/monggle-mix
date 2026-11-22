@@ -84,7 +84,16 @@ button { font-family: inherit; color: inherit; border: 0; cursor: pointer; }
 #micBtn.on[data-st="on"]::after { content: ''; position: absolute; right: 2px; top: 2px; width: 10px; height: 10px; border-radius: 50%; background: #3ee06a; }
 #micBtn.busy { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-#leftBtns { position: absolute; left: calc(12px + var(--safe-l)); bottom: 14px; display: flex; gap: 10px; }
+#minimap { position: absolute; right: calc(10px + var(--safe-r)); top: 64px; width: 120px; height: 90px; border-radius: 12px; box-shadow: 0 3px 10px rgba(90, 60, 130, .18); opacity: .92; pointer-events: none; }
+#bossBar { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); width: min(320px, 40vw); text-align: center; background: var(--card); border-radius: 14px; padding: 5px 12px 8px; font-size: 14px; box-shadow: 0 3px 10px rgba(90, 60, 130, .18); pointer-events: none; }
+#bossBar .bar { height: 10px; }
+#bossBar .bar i { background: linear-gradient(90deg, #ff5f7a, #ff9e7a); }
+#leftBtns { position: absolute; left: calc(12px + var(--safe-l)); bottom: 14px; display: flex; gap: 10px; align-items: flex-end; }
+#emoTray { position: absolute; left: 0; bottom: 70px; display: flex; gap: 6px; background: var(--card); padding: 6px; border-radius: 20px; box-shadow: 0 4px 14px rgba(90, 60, 130, .2); animation: pop .15s; }
+#emoTray button { width: 46px; height: 46px; border-radius: 50%; background: #fff; font-size: 26px; }
+.emo { position: absolute; left: 0; top: 0; margin-left: -24px; margin-top: -50px; width: 48px; height: 48px; font-size: 30px; display: flex; align-items: center; justify-content: center;
+  background: #fff; border-radius: 50%; box-shadow: 0 4px 10px rgba(90, 60, 130, .25); }
+.emo::after { content: ''; position: absolute; bottom: -6px; left: 18px; border: 6px solid transparent; border-top-color: #fff; border-bottom: 0; }
 .mixBtn { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); font-size: 20px; padding: 12px 22px; border-radius: 99px;
   background: linear-gradient(180deg, #ffe58a, #ffc93d); box-shadow: 0 5px 0 #e0a21a, 0 8px 20px rgba(255, 180, 40, .4); animation: bob 1.4s ease-in-out infinite; }
 @keyframes bob { 50% { transform: translate(-50%, -5px); } }

@@ -4,7 +4,8 @@ import { buildWorld } from './world.js';
 import { Game } from './game.js';
 import { UI } from './ui.js';
 import { Net } from './net.js';
-import { makeHero } from './models.js';
+import { makeHero, makeMonggle } from './models.js';
+import { unlock as unlockSound, sfx } from './sfx.js';
 import { newSave, loadLocal, save, checkLogin, pinLogin, loadCloud, normalize, currentUser, useProfileStorage, profileOfUser } from './save.js';
 
 const $ = s => document.querySelector(s);
@@ -47,6 +48,7 @@ const who = $('#who');
 function drawPin() { dots.forEach((d, i) => d.classList.toggle('on', i < pin.length)); }
 document.querySelectorAll('.pad button').forEach(b => b.onclick = () => {
   if (busy) return;
+  sfx.tap();
   if (b.dataset.k === 'del') pin = pin.slice(0, -1);
   else if (pin.length < 4) pin += b.textContent;
   drawPin();
@@ -97,6 +99,7 @@ function begin(s) {
   game = new Game({ scene, camera, state, ui, world });
   net = new Net(ui);
   ui.attach(game, net);
+  game.onPartyChange = () => net.updateParty();
   net.start(state);
   ui.toast(`어서 와요, ${state.name}! 땅을 누르면 걸어가고, 몽글이를 누르면 같이 싸워요`);
   save(state);
@@ -112,7 +115,7 @@ function pick(e) {
 }
 canvas.addEventListener('pointerdown', e => {
   if (!game || ui.panelOpen) return;
-  net?.ac?.resume?.();
+  net?.ac?.resume?.(); unlockSound();
   pick(e);
   const hits = ray.intersectObjects(game.pickables(), false);
   if (hits.length) { game.tapUnit(hits[0].object.userData.unit); pressing = false; return; }
@@ -133,16 +136,28 @@ let partner = null;
 function updatePartner(dt) {
   const p = net?.partner();
   if (!p || p.x == null) {
-    if (partner) { scene.remove(partner.model.root); ui.detachPartner(); partner = null; }
+    if (partner) { scene.remove(partner.model.root); partner.pets.forEach(q => scene.remove(q.model.root)); ui.detachPartner(); partner = null; }
     return;
   }
   if (!partner || partner.look !== p.look) {
-    if (partner) scene.remove(partner.model.root);
+    if (partner) { scene.remove(partner.model.root); partner.pets.forEach(q => scene.remove(q.model.root)); }
     const model = makeHero(p.look || 'girl');
     model.root.position.set(p.x, 0, p.z);
     scene.add(model.root);
-    partner = { model, look: p.look, t: 0 };
+    partner = { model, look: p.look, t: 0, pets: [], petKey: '' };
     ui.attachPartner(model, p.name);
+  }
+  // 상대 몽글이
+  const key = JSON.stringify(p.party || []);
+  if (key !== partner.petKey) {
+    partner.pets.forEach(q => scene.remove(q.model.root));
+    partner.pets = (p.party || []).map((m, i) => {
+      const pm = makeMonggle(m.sp, { shiny: m.shiny });
+      pm.root.position.set(p.x + i - 0.5, 0, p.z + 1);
+      scene.add(pm.root);
+      return { model: pm, slot: i, t: Math.random() * 5 };
+    });
+    partner.petKey = key;
   }
   const r = partner.model.root.position;
   const dx = p.x - r.x, dz = p.z - r.z, d = Math.hypot(dx, dz);
@@ -155,6 +170,16 @@ function updatePartner(dt) {
   partner.t += dt;
   const hop = d > 0.1 ? Math.abs(Math.sin(partner.t * 11)) * 0.2 : 0;
   partner.model.body.position.y = hop;
+  const n = partner.pets.length, face = partner.model.root.rotation.y;
+  for (const q of partner.pets) {
+    const back = face + Math.PI + (q.slot - (n - 1) / 2) * 0.9;
+    const tx = r.x + Math.sin(back) * 1.6, tz = r.z + Math.cos(back) * 1.6;
+    const qp = q.model.root.position, qx = tx - qp.x, qz = tz - qp.z, qd = Math.hypot(qx, qz);
+    q.t += dt;
+    if (qd > 12) qp.set(tx, 0, tz);
+    else if (qd > 0.4) { const st = Math.min(qd, 6 * dt); qp.x += qx / qd * st; qp.z += qz / qd * st; q.model.root.rotation.y = Math.atan2(qx, qz); q.model.body.position.y = Math.abs(Math.sin(q.t * 11)) * 0.2; }
+    else q.model.body.position.y = 0;
+  }
 }
 
 // ---------- 루프 ----------

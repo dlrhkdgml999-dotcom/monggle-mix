@@ -40,18 +40,26 @@ const BLACK = () => toon(0x2b2233);
 const WHITE = () => new THREE.MeshBasicMaterial({ color: 0xffffff });
 const BLUSH = () => new THREE.MeshBasicMaterial({ color: 0xff8fa8, transparent: true, opacity: 0.75 });
 
-// 얼굴: 반짝이는 눈 + 볼터치
+// 얼굴: 동글동글 반짝이는 눈 + 볼터치 + 웃는 입
+const smileGeo = new THREE.TorusGeometry(1, 0.28, 6, 14, Math.PI);
 function face(g, y, z, spread = 0.17, s = 1) {
-  const eye = BLACK(), hi = WHITE(), bl = BLUSH();
+  z += 0.02;
+  const eye = toon(0x3a2838), hi = WHITE(), bl = BLUSH();
+  const sp = (spread + 0.02) * s;
   for (const sx of [-1, 1]) {
-    g.add(ball(eye, sx * spread * s, y, z, 0.072 * s, 0.094 * s, 0.055 * s));
-    g.add(ball(hi, sx * spread * s + 0.021 * s, y + 0.03 * s, z + 0.042 * s, 0.024 * s));
-    const b = ball(bl, sx * (spread + 0.11) * s, y - 0.09 * s, z - 0.02 * s, 0.07 * s, 0.04 * s, 0.03 * s);
+    const e = ball(eye, sx * sp, y - 0.01 * s, z - 0.012, 0.062 * s, 0.07 * s, 0.035 * s);
+    e.castShadow = false; g.add(e);
+    g.add(ball(hi, sx * sp + 0.018 * s, y + 0.017 * s, z + 0.018, 0.02 * s, 0.022 * s, 0.01 * s));
+    g.add(ball(hi, sx * sp - 0.02 * s, y - 0.03 * s, z + 0.016, 0.009 * s, 0.009 * s, 0.006 * s));
+    const b = ball(bl, sx * (spread + 0.12) * s, y - 0.085 * s, z - 0.03, 0.072 * s, 0.04 * s, 0.03 * s);
     b.castShadow = false;
     g.add(b);
   }
-  // 작은 입
-  g.add(ball(eye, 0, y - 0.1 * s, z + 0.01, 0.03 * s, 0.018 * s, 0.02 * s));
+  // 작은 웃는 입 (반원)
+  const m = new THREE.Mesh(smileGeo, eye);
+  m.scale.setScalar(0.03 * s); m.rotation.z = Math.PI;
+  m.position.set(0, y - 0.07 * s, z + 0.002);
+  g.add(m);
 }
 
 // 종별 색 (기본 / 반짝이)

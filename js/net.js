@@ -14,7 +14,16 @@ export class Net {
     this.mic = false;
     this.pc = null;
     this.subs = [];
+    this.seenEmote = {};
   }
+
+  partyList() {
+    const s = this.state;
+    if (!s) return [];
+    return s.party.map(id => s.monggles.find(m => m.id === id)).filter(Boolean).map(m => ({ sp: m.sp, shiny: !!m.shiny }));
+  }
+  updateParty() { if (this.on) this.M.update(this.meRef, { party: this.partyList() }).catch(() => {}); }
+  sendEmote(e) { if (this.on) this.M.update(this.meRef, { emote: e, emoteT: Date.now() }).catch(() => {}); }
 
   get on() { return !!this.uid; }
 
@@ -28,13 +37,18 @@ export class Net {
     onValue(ref(this.db, '.info/connected'), snap => {
       if (!snap.val()) return;
       onDisconnect(this.meRef).remove();
-      set(this.meRef, { name: state.name, look: state.look, mic: this.mic, t: serverTimestamp() });
+      set(this.meRef, { name: state.name, look: state.look, mic: this.mic, t: serverTimestamp(), party: this.partyList() });
     });
     onValue(ref(this.db, 'presence'), snap => {
       const all = snap.val() || {};
       const next = {};
       for (const [uid, v] of Object.entries(all)) if (uid !== this.uid) next[uid] = v;
       this.others = next;
+      // 상대 감정표현
+      for (const [uid, v] of Object.entries(next)) {
+        if (v.emoteT && this.seenEmote[uid] !== undefined && v.emoteT !== this.seenEmote[uid]) this.ui.partnerEmote(v.emote);
+        this.seenEmote[uid] = v.emoteT || 0;
+      }
       this.ui.renderOnline(this.partner());
       this.checkCall();
     });

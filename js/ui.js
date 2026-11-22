@@ -2,6 +2,7 @@
 import * as THREE from '../lib/three.min.js';
 import { SPECIES, ELEM, DEX_ORDER, mixResult, MIX_COST, MIX_MIN_LV, BOX_MAX, expToNext, MAX_LV } from './data.js';
 import { makeMonggle } from './models.js';
+import { sfx, isMuted, setMuted } from './sfx.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
@@ -59,12 +60,17 @@ export class UI {
         <div id="dust" class="pill">✦ <b>0</b></div>
         <div id="online" class="pill off"><i class="dot"></i><span>혼자 노는 중</span></div>
         <button id="micBtn" class="round" aria-label="마이크">🎤</button>
+        <button id="muteBtn" class="round" aria-label="소리">🔊</button>
       </div>
+      <canvas id="minimap" width="240" height="180"></canvas>
+      <div id="bossBar" class="hidden"><b>🍄 대왕버섯</b><div class="bar"><i></i></div></div>
       <div id="zoneName"></div>
       <div id="toast"></div>
       <div id="leftBtns">
         <button id="bagBtn" class="round big">🎒<small>가방</small></button>
         <button id="dexBtn" class="round big">📖<small>도감</small></button>
+        <button id="emoBtn" class="round big">😊<small>표현</small></button>
+        <div id="emoTray" class="hidden"><button>❤️</button><button>😆</button><button>😠</button><button>😭</button></div>
       </div>
       <button id="mixBtn" class="mixBtn hidden">🍲 믹스 솥 열기</button>
       <div id="skills"></div>
@@ -81,6 +87,16 @@ export class UI {
       if (ok) $('#micBtn').classList.toggle('on', this.net.mic);
     };
     $('#panel .x').onclick = () => this.closePanel();
+    $('#emoBtn').onclick = () => { $('#emoTray').classList.toggle('hidden'); sfx.tap(); };
+    $('#emoTray').querySelectorAll('button').forEach(b => b.onclick = () => {
+      $('#emoTray').classList.add('hidden');
+      this.emote(this.game.hero.model.root, b.textContent);
+      this.net.sendEmote(b.textContent);
+    });
+    const mb = $('#muteBtn');
+    const drawMute = () => { mb.textContent = isMuted() ? '🔇' : '🔊'; };
+    drawMute();
+    mb.onclick = () => { setMuted(!isMuted()); drawMute(); sfx.tap(); };
     $('#panel').addEventListener('pointerdown', e => { if (e.target.id === 'panel') this.closePanel(); });
   }
 
@@ -127,7 +143,7 @@ export class UI {
     }
   }
   pulse(b) { b.classList.remove('pulse'); void b.offsetWidth; b.classList.add('pulse'); }
-  shake(b) { b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); }
+  shake(b) { sfx.error(); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); }
 
   // 매 프레임
   tick() {
@@ -151,6 +167,33 @@ export class UI {
     // 머리 위 체력바
     for (const u of g.units) this.placeBar(u);
     if (this.partnerTag) this.placeTag();
+    // 보스 체력
+    const bs = g.boss, bb = $('#bossBar');
+    const near = bs && !bs.dead && !bs.removed && Math.hypot(bs.model.root.position.x - g.hero.model.root.position.x, bs.model.root.position.z - g.hero.model.root.position.z) < 16;
+    bb.classList.toggle('hidden', !near);
+    if (near) bb.querySelector('i').style.width = (bs.hp / bs.maxHp * 100) + '%';
+    this.mapT = (this.mapT || 0) + 1;
+    if (this.mapT % 6 === 0) this.drawMap();
+  }
+
+  drawMap() {
+    const c = $('#minimap'), x = c.getContext('2d'), g = this.game;
+    const W = c.width, H = c.height;
+    // 월드 좌표 → 미니맵
+    const B = { minX: -30, maxX: 60, minZ: -64, maxZ: 26 };
+    const k = Math.min(W / (B.maxX - B.minX), H / (B.maxZ - B.minZ));
+    const ox = (W - (B.maxX - B.minX) * k) / 2, oz = (H - (B.maxZ - B.minZ) * k) / 2;
+    const P = (px, pz) => [ox + (px - B.minX) * k, oz + (pz - B.minZ) * k];
+    x.clearRect(0, 0, W, H);
+    x.fillStyle = 'rgba(159, 224, 138, .9)'; x.beginPath(); x.roundRect(0, 0, W, H, 22); x.fill();
+    const circ = (px, pz, r, col) => { const [a, b] = P(px, pz); x.fillStyle = col; x.beginPath(); x.arc(a, b, r * k, 0, 7); x.fill(); };
+    circ(34, 6, 20, '#8bd977'); circ(4, -47, 13, '#f6e6b4'); circ(4, -47, 9, '#6cc8ff'); circ(0, 0, 13, '#f3e2b8');
+    const dot = (px, pz, r, col, ring) => { const [a, b] = P(px, pz); x.fillStyle = col; x.beginPath(); x.arc(a, b, r, 0, 7); x.fill(); if (ring) { x.lineWidth = 3; x.strokeStyle = ring; x.stroke(); } };
+    for (const u of g.units) if (u.kind === 'wild' && !u.dead && !u.boss) dot(u.model.root.position.x, u.model.root.position.z, 3, 'rgba(90,70,110,.45)');
+    if (g.boss && !g.boss.dead && !g.boss.removed) { const bp = g.boss.model.root.position; dot(bp.x, bp.z, 8, '#ff5f7a', '#fff'); }
+    dot(0, -2, 5, '#9f78ff');
+    if (this.partnerModel) { const pp = this.partnerModel.root.position; dot(pp.x, pp.z, 7, '#ff8fb4', '#fff'); }
+    const hp = g.hero.model.root.position; dot(hp.x, hp.z, 7, '#fff', '#7a56d6');
   }
 
   // ---------- 머리 위 체력바 ----------
@@ -166,6 +209,7 @@ export class UI {
   }
   placeBar(u) {
     if (!u.bar) return;
+    if (u.boss) { u.bar.style.display = 'none'; return; }
     const show = !u.dead && (u.kind === 'friend' || (u.kind === 'wild' && (u.hp < u.maxHp || this.game.hero.target === u)));
     const s = this.project(u.model.root.position, u.sp && SPECIES[u.sp].stage === 2 ? 1.75 : 1.45);
     if (!show || !s.vis) { u.bar.style.display = 'none'; return; }
@@ -209,6 +253,28 @@ export class UI {
     e.textContent = z ? z.name : '';
     e.classList.remove('show'); void e.offsetWidth;
     if (z) e.classList.add('show');
+  }
+
+  // ---------- 감정표현 ----------
+  emote(root, e) {
+    if (!root) return;
+    sfx.emote();
+    const el = h('div', 'emo', e);
+    this.fx.appendChild(el);
+    const t0 = performance.now();
+    const follow = () => {
+      const k = (performance.now() - t0) / 2200;
+      if (k >= 1 || !el.isConnected) { el.remove(); return; }
+      const s = this.project(root.position, 2.1);
+      el.style.transform = `translate(${s.x}px, ${s.y - k * 20}px) scale(${k < 0.1 ? k * 10 : 1})`;
+      el.style.opacity = k > 0.8 ? (1 - k) * 5 : 1;
+      requestAnimationFrame(follow);
+    };
+    follow();
+  }
+  partnerEmote(e) {
+    if (this.partnerModel) this.emote(this.partnerModel.root, e);
+    else this.toast(`상대가 ${e} 를 보냈어요`);
   }
 
   // ---------- 접속·통화 ----------
@@ -369,6 +435,7 @@ export class UI {
     s.dex[res] = (s.dex[res] || 0) + 1;
     g.syncParty(); g.refreshVivid(); this.save();
     // 연출
+    sfx.bubble();
     const b = this.openPanel('🍲 보글보글…', 'mix');
     b.insertAdjacentHTML('beforeend', `<div class="brew"><div class="pot">🍲</div></div>`);
     setTimeout(() => {
@@ -381,6 +448,7 @@ export class UI {
           ${isNew ? '<p class="new">도감에 새로 등록됐어요 · 섬에 색이 조금 돌아왔어요</p>' : ''}
         </div>
         <div class="btns center"><button class="btn" id="again">또 섞기</button><button class="btn ghost" id="ok">닫기</button></div>`);
+      sfx.born(shiny);
       $('#again', b2).onclick = () => this.openMix();
       $('#ok', b2).onclick = () => this.closePanel();
     }, 1600);
