@@ -94,6 +94,7 @@ export class Net {
   }
   updateParty() { if (this.on) this.M.update(this.meRef, { party: this.partyList() }).catch(() => {}); }
   sendEmote(e) { if (this.on) this.M.update(this.meRef, { emote: e, emoteT: Date.now() }).catch(() => {}); }
+  sendChat(text) { if (this.on) this.M.update(this.meRef, { chat: text.slice(0, 40), chatT: Date.now() }).catch(() => {}); }
 
   get on() { return !!this.uid; }
   get connected() { return !!this.voice?.connected; }
@@ -134,6 +135,8 @@ export class Net {
       for (const [uid, v] of Object.entries(next)) {
         if (v.emoteT && this.seenEmote[uid] !== undefined && v.emoteT !== this.seenEmote[uid]) this.ui.partnerEmote(v.emote);
         this.seenEmote[uid] = v.emoteT || 0;
+        if (v.chatT && this.seenChat?.[uid] !== undefined && v.chatT !== this.seenChat[uid]) this.ui.partnerChat(v.name, v.chat);
+        (this.seenChat ||= {})[uid] = v.chatT || 0;
       }
       this.ui.renderOnline(this.partner());
       const p = this.partner();

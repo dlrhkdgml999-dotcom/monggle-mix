@@ -327,7 +327,7 @@ export class Game {
       return;
     }
     this.reward(u);
-    const rate = !this.state.dex[u.sp] ? CAPTURE_RATE_NEW : CAPTURE_RATE;
+    const rate = (!this.state.dex[u.sp] ? CAPTURE_RATE_NEW : CAPTURE_RATE) * (this.candyT > 0 ? 2 : 1);
     if (!u.minion && Math.random() < rate) {
       // 나만의 친구로 바꾸기 (host 화면과 상관없이)
       this.mirrors.delete(m.id);
@@ -542,7 +542,7 @@ export class Game {
     if (u.kind === 'wild') {
       this.reward(u);
       const isNew = !this.state.dex[u.sp];
-      const rate = isNew ? CAPTURE_RATE_NEW : CAPTURE_RATE;
+      const rate = (isNew ? CAPTURE_RATE_NEW : CAPTURE_RATE) * (this.candyT > 0 ? 2 : 1);
       if (Math.random() < rate) this.makeFriend(u);
       else if (u.minion || u.mirror) { u.fadeT = 1; if (!u.mirror) setTimeout(() => this.removeUnit(u), 1200); }
       else { u.fadeT = 1; setTimeout(() => this.respawn(u), 9000); }
@@ -701,6 +701,20 @@ export class Game {
     return true;
   }
 
+  usePotion() {
+    const it = this.state.items;
+    if (!it.potion) { this.ui.toast('물약이 없어요. 마을 상점에서 살 수 있어요'); return false; }
+    if (this.potionCd > 0 || this.hero.dead) return false;
+    it.potion--; this.potionCd = 2;
+    for (const p of this.units) if ((p.kind === 'hero' || p.kind === 'pet') && !p.dead) {
+      const h = Math.round(p.maxHp * 0.5); p.hp = Math.min(p.maxHp, p.hp + h);
+      this.ui.floatText(p.model.root.position, '+' + h, 'heal');
+    }
+    sfx.heal(); this.burst(this.hero.model.root.position, 0x8cff9a, 10);
+    this.ui.save();
+    return true;
+  }
+
   jobSkill() {
     const h = this.hero;
     if (this.jobSkillCd > 0 || h.dead) return false;
@@ -775,6 +789,8 @@ export class Game {
     if (this.buffAtk > 0) this.buffAtk -= dt;
     if (this.heroSkillCd > 0) this.heroSkillCd -= dt;
     if (this.jobSkillCd > 0) this.jobSkillCd -= dt;
+    if (this.candyT > 0) this.candyT -= dt;
+    if (this.potionCd > 0) this.potionCd -= dt;
     if (this.shieldT > 0) this.shieldT -= dt;
     if (this.bossT > 0 && this.mode !== 'guest') { this.bossT -= dt; if (this.bossT <= 0) { this.spawnBoss(); this.ui.toast('🍄 말랑 들판 끝에 대왕버섯이 나타났어요!'); } }
 

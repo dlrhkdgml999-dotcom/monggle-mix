@@ -179,3 +179,9 @@ export const JOBS = {
   pirate: { name: '해적', icon: '🏴‍☠️', desc: '권총으로 중간 거리에서 탕탕 쏴요.', hp: 1.1, atk: 1.05, range: 4.2, cd: 0.7, style: 'shoot', proj: 'bullet',
     skill: { name: '대포 쾅', type: 'cannon', power: 3.0, radius: 3, cd: 10 } },
 };
+
+// 마을 상점
+export const SHOP = [
+  { id: 'potion', name: '체력 물약', icon: '🧪', price: 5, desc: '주인공과 몽글이 체력을 절반 채워요' },
+  { id: 'candy', name: '친구 사탕', icon: '🍬', price: 12, desc: '1분 동안 친구가 될 확률이 2배! (바로 먹어요)' },
+];

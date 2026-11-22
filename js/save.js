@@ -62,6 +62,7 @@ export function newSave(name, look) {
     ],
     party: [1, 2],
     dex: { bulssi: 1, saessak: 1 },
+    items: { potion: 3 },
     created: Date.now(),
   };
 }
@@ -136,5 +137,6 @@ export function normalize(s) {
   s.party = Array.isArray(s.party) ? s.party.filter(x => x != null) : Object.values(s.party || {});
   s.dex = s.dex || {};
   s.dust = s.dust || 0;
+  s.items = s.items || { potion: 3 };
   return s;
 }

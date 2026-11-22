@@ -1,6 +1,6 @@
 // 몽글믹스 — 화면 UI (상단 정보, 스킬 버튼, 가방, 도감, 믹스 솥)
 import * as THREE from '../lib/three.min.js';
-import { SPECIES, ELEM, DEX_ORDER, mixResult, mixMinLv, MIX_COST, MIX_MIN_LV, BOX_MAX, expToNext, MAX_LV, QUESTS, JOBS } from './data.js';
+import { SPECIES, ELEM, DEX_ORDER, mixResult, mixMinLv, MIX_COST, MIX_MIN_LV, BOX_MAX, expToNext, MAX_LV, QUESTS, JOBS, SHOP } from './data.js';
 import { BOUNDS } from './world.js';
 import { makeMonggle, makeHero } from './models.js';
 import { sfx, isMuted, setMuted } from './sfx.js';
@@ -89,9 +89,12 @@ export class UI {
         <button id="bagBtn" class="round big">🎒<small>가방</small></button>
         <button id="dexBtn" class="round big">📖<small>도감</small></button>
         <button id="emoBtn" class="round big">😊<small>표현</small></button>
-        <div id="emoTray" class="hidden"><button>❤️</button><button>😆</button><button>😠</button><button>😭</button></div>
+        <button id="potBtn" class="round big">🧪<small>물약</small><b class="badge2">0</b></button>
+        <div id="emoTray" class="hidden"><button>❤️</button><button>😆</button><button>😠</button><button>😭</button><button class="chatOpen">✏️</button></div>
+        <div id="chatRow" class="hidden"><input id="chatIn" maxlength="40" placeholder="하고 싶은 말"><button id="chatSend">보내기</button></div>
       </div>
-      <button id="mixBtn" class="mixBtn hidden">🍲 믹스 솥 열기</button>
+      <div id="centerBtns"><button id="shopBtn" class="mixBtn shop hidden">🏪 상점</button><button id="mixBtn" class="mixBtn hidden">🍲 믹스 솥 열기</button></div>
+      <div id="buffs"></div>
       <div id="skills"></div>
       <div id="panel" class="hidden"><div class="sheet"><button class="x">✕</button><div class="body"></div></div></div>
     `;
@@ -107,7 +110,17 @@ export class UI {
     };
     $('#panel .x').onclick = () => this.closePanel();
     $('#emoBtn').onclick = () => { $('#emoTray').classList.toggle('hidden'); sfx.tap(); };
-    $('#emoTray').querySelectorAll('button').forEach(b => b.onclick = () => {
+    $('#shopBtn').onclick = () => this.openShop();
+    $('#potBtn').onclick = () => { if (this.game.usePotion()) this.pulse($('#potBtn')); };
+    $('.chatOpen').onclick = e => { e.stopPropagation(); $('#emoTray').classList.add('hidden'); $('#chatRow').classList.remove('hidden'); $('#chatIn').focus(); };
+    const sendChat = () => {
+      const t = $('#chatIn').value.trim(); if (!t) { $('#chatRow').classList.add('hidden'); return; }
+      $('#chatIn').value = ''; $('#chatRow').classList.add('hidden');
+      this.bubble(this.game.hero.model.root, t); this.net.sendChat(t);
+    };
+    $('#chatSend').onclick = sendChat;
+    $('#chatIn').addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+    $('#emoTray').querySelectorAll('button:not(.chatOpen)').forEach(b => b.onclick = () => {
       $('#emoTray').classList.add('hidden');
       this.emote(this.game.hero.model.root, b.textContent);
       this.net.sendEmote(b.textContent);
@@ -200,7 +213,17 @@ export class UI {
       cd.style.height = Math.max(0, Math.min(1, left / total)) * 100 + '%';
       b.classList.toggle('ready', left <= 0);
     }
-    $('#mixBtn').classList.toggle('hidden', !g.nearCauldron() || !$('#panel').classList.contains('hidden'));
+    const panelOpen = !$('#panel').classList.contains('hidden');
+    $('#mixBtn').classList.toggle('hidden', !g.nearCauldron() || panelOpen);
+    $('#shopBtn').classList.toggle('hidden', !(g.lastZone?.safe) || panelOpen);
+    $('#potBtn .badge2').textContent = this.state.items?.potion || 0;
+    $('#potBtn').classList.toggle('empty', !this.state.items?.potion);
+    const bf = [];
+    if (g.candyT > 0) bf.push(`🍬 ${Math.ceil(g.candyT)}초`);
+    if (g.buffAtk > 0) bf.push(`📣 ${Math.ceil(g.buffAtk)}초`);
+    if (g.shieldT > 0) bf.push(`🛡 ${Math.ceil(g.shieldT)}초`);
+    const bh = bf.map(x => `<span>${x}</span>`).join('');
+    if ($('#buffs').dataset.h !== bh) { $('#buffs').innerHTML = bh; $('#buffs').dataset.h = bh; }
     // 머리 위 체력바
     for (const u of g.units) this.placeBar(u);
     if (this.partnerTag) this.placeTag();
@@ -384,6 +407,49 @@ export class UI {
     $('iframe', w).src = 'about:blank';
     w.classList.add('hidden');
     this.ytOpen = false;
+  }
+
+  // ---------- 상점 ----------
+  openShop() {
+    const s = this.state;
+    const b = this.openPanel(`🏪 마을 상점 <small>✦ ${s.dust}</small>`);
+    const list = h('div', 'shop');
+    list.innerHTML = SHOP.map(it => `
+      <div class="sitem"><span class="si">${it.icon}</span><div><b>${it.name}</b> <small>✦${it.price}</small><p>${it.desc}</p>
+      ${it.id === 'potion' ? `<em>가진 개수: ${s.items.potion || 0}</em>` : ''}</div>
+      <button class="btn" data-id="${it.id}" data-n="1">사기</button>${it.id === 'potion' ? `<button class="btn ghost" data-id="${it.id}" data-n="5">5개</button>` : ''}</div>`).join('');
+    b.appendChild(list);
+    list.onclick = e => {
+      const btn = e.target.closest('button'); if (!btn) return;
+      const it = SHOP.find(x => x.id === btn.dataset.id), n = +btn.dataset.n;
+      if (s.dust < it.price * n) { this.shake(btn); this.toast('반짝가루가 모자라요'); return; }
+      s.dust -= it.price * n;
+      if (it.id === 'candy') { this.game.candyT = 60; this.toast('🍬 냠! 1분 동안 친구가 될 확률 2배'); }
+      else { s.items[it.id] = (s.items[it.id] || 0) + n; this.toast(`${it.icon} ${it.name} ${n}개를 샀어요`); }
+      sfx.dust(); this.save(); this.renderTop(); this.openShop();
+    };
+  }
+
+  // ---------- 말풍선 채팅 ----------
+  bubble(root, text) {
+    if (!root) return;
+    sfx.emote();
+    const el = h('div', 'cbub'); el.textContent = text;
+    this.fx.appendChild(el);
+    const t0 = performance.now();
+    const follow = () => {
+      const k = (performance.now() - t0) / 4500;
+      if (k >= 1 || !el.isConnected) { el.remove(); return; }
+      const s = this.project(root.position, 2.15);
+      el.style.transform = `translate(${s.x}px, ${s.y}px) translate(-50%, -100%)`;
+      el.style.opacity = k > 0.85 ? (1 - k) / 0.15 : 1;
+      requestAnimationFrame(follow);
+    };
+    follow();
+  }
+  partnerChat(name, text) {
+    if (this.partnerModel) this.bubble(this.partnerModel.root, text);
+    this.toast(`💬 ${name}: ${text}`);
   }
 
   // ---------- 감정표현 ----------
