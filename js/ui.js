@@ -99,6 +99,7 @@ export class UI {
       this.net.sendEmote(b.textContent);
     });
     $('#musicBtn').onclick = () => this.openMusic();
+    $('#online').onclick = () => this.openDiag();
     const mb = $('#muteBtn');
     const drawMute = () => { mb.textContent = isMuted() ? '🔇' : '🔊'; };
     drawMute();
@@ -270,6 +271,41 @@ export class UI {
     e.innerHTML = z ? z.name + (z.lv ? `<small>Lv ${z.lv[0]}~${z.lv[1]}</small>` : '') : '';
     e.classList.remove('show'); void e.offsetWidth;
     if (z) e.classList.add('show');
+  }
+
+  // ---------- 통화 점검 ----------
+  openDiag() {
+    const d = this.net?.diag?.() || {};
+    const ok = v => v ? '✅' : '❌';
+    const b = this.openPanel('📡 같이 하기 상태');
+    const vst = (d.voice || '').split(' / ')[0];
+    let tip = '';
+    if (!d.login) tip = '비밀번호로 로그인해야 같이 할 수 있어요.';
+    else if (d.partner === '접속 안 함') tip = '상대가 아직 접속 안 했어요.';
+    else if ((d.partner || '').includes('다름')) tip = '두 폰의 게임 버전이 달라요. 둘 다 앱을 완전히 껐다 켜거나 새로고침해 주세요.';
+    else if (!d.myMic || !d.theirMic) tip = '둘 다 🎤를 켜야 통화가 연결돼요.';
+    else if (vst === 'failed') tip = '인터넷 환경 때문에 연결이 막혔어요. 중계 서버가 필요해요 — 광희쌤한테 알려 주세요.';
+    else if (vst === 'connecting' || vst === 'new') tip = '연결 중이에요. 10초쯤 기다려 보세요.';
+    else if (vst === 'connected') tip = '통화 연결됐어요. 소리가 안 나면 화면을 한 번 눌러 주세요.';
+    b.insertAdjacentHTML('beforeend', `
+      <div class="kv"><span>로그인</span><b>${ok(d.login)}</b></div>
+      <div class="kv"><span>상대</span><b>${d.partner || '-'}</b></div>
+      <div class="kv"><span>내 마이크 / 상대 마이크</span><b>${ok(d.myMic)} / ${ok(d.theirMic)}</b></div>
+      <div class="kv"><span>통화 연결</span><b>${d.voice || '-'}</b></div>
+      <div class="kv"><span>같이 사냥 연결</span><b>${d.linked ? '✅' : d.game || '-'}</b></div>
+      <div class="kv"><span>내 게임 버전</span><b>${d.version || '-'}</b></div>
+      <p class="hint" style="font-size:15px;color:var(--ink)">${tip}</p>
+      <div class="btns center"><button class="btn ghost" id="dgRe">다시 보기</button><button class="btn ghost" id="dgReload">새로고침</button></div>`);
+    $('#dgRe', b).onclick = () => this.openDiag();
+    $('#dgReload', b).onclick = () => location.reload();
+  }
+
+  newVersion() {
+    if ($('#newVer')) return;
+    const e = h('button', 'newVer', '✨ 새 버전이 나왔어요 · 눌러서 새로고침');
+    e.id = 'newVer';
+    e.onclick = () => { this.save(); setTimeout(() => location.reload(), 300); };
+    $('#hud').appendChild(e);
   }
 
   // ---------- 🎵 음악 (유튜브 링크) ----------

@@ -2,6 +2,7 @@
 // 연결 신호만 Firebase로 주고받고, 목소리와 게임 데이터는 폰끼리 바로(WebRTC) 간다.
 import { fbHandle, currentUser } from './save.js';
 import { setAudioMode } from './sfx.js';
+import { VERSION } from './version.js';
 
 const ICE = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
@@ -111,7 +112,7 @@ export class Net {
     this.meRef = ref(this.db, 'presence/' + this.uid);
     this.writePresence = () => set(this.meRef, {
       name: state.name, look: state.look, mic: this.mic, t: serverTimestamp(), party: this.partyList(),
-      ...(this.lx != null ? { x: this.lx, z: this.lz } : {}), lv: state.lv,
+      ...(this.lx != null ? { x: this.lx, z: this.lz } : {}), lv: state.lv, v: VERSION,
     }).catch(() => {});
     onValue(ref(this.db, '.info/connected'), snap => {
       if (!snap.val()) return;
@@ -130,6 +131,11 @@ export class Net {
         this.seenEmote[uid] = v.emoteT || 0;
       }
       this.ui.renderOnline(this.partner());
+      const p = this.partner();
+      if (p && p.v && p.v !== VERSION && this.warnedV !== p.v) {
+        this.warnedV = p.v;
+        this.ui.toast(p.v > VERSION ? '상대가 더 새 버전이에요. 새로고침해 주세요' : `${p.name}의 게임이 옛날 버전이에요. 새로고침해 달라고 해 주세요`);
+      }
       this.checkCall();
       this.checkGame();
     });
@@ -256,6 +262,18 @@ export class Net {
     this.voice = null;
     if (this.audio) this.audio.srcObject = null;
     this.ui.setPartnerVoice(0);
+  }
+
+  // 통화·같이 사냥 상태 (점검용)
+  diag() {
+    const p = this.partner();
+    const st = pc => pc ? `${pc.connectionState} / ${pc.iceConnectionState}` : '없음';
+    return {
+      login: this.on, version: VERSION,
+      partner: p ? `${p.name} (버전 ${p.v || '옛날'}${p.v && p.v !== VERSION ? ' ⚠ 다름' : ''})` : '접속 안 함',
+      myMic: this.mic, theirMic: !!p?.mic,
+      voice: st(this.voice?.pc), game: st(this.game?.pc), linked: !!this.linked,
+    };
   }
 
   // 말하는 소리 크기 (말풍선 표시용)

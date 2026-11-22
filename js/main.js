@@ -5,6 +5,7 @@ import { Game } from './game.js';
 import { UI } from './ui.js';
 import { Net } from './net.js';
 import { Sync } from './sync.js';
+import { VERSION } from './version.js';
 import { makeHero, makeMonggle } from './models.js';
 import { unlock as unlockSound, sfx } from './sfx.js';
 import { newSave, loadLocal, save, checkLogin, pinLogin, loadCloud, normalize, currentUser, useProfileStorage, profileOfUser } from './save.js';
@@ -257,5 +258,18 @@ function loop() {
 }
 loop();
 
-document.addEventListener('visibilitychange', () => { if (document.hidden && state) save(state); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && state) save(state); else checkVersion(); });
+
+// 새 버전 확인 (1분마다 + 앱으로 돌아올 때)
+async function checkVersion() {
+  try {
+    const r = await fetch('version.json?' + Date.now(), { cache: 'no-store' });
+    const { v } = await r.json();
+    if (v && v !== VERSION) {
+      if (ui) ui.newVersion();
+      else if (sessionStorage.getItem('mm-reloaded') !== v) { sessionStorage.setItem('mm-reloaded', v); location.reload(); }
+    }
+  } catch {}
+}
+if (!TEST) { checkVersion(); setInterval(checkVersion, 60000); }
 if (TEST && params.get('test') === 'auto') $('#guestBtn').onclick();

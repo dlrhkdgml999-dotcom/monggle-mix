@@ -236,3 +236,6 @@ button { font-family: inherit; color: inherit; border: 0; cursor: pointer; }
 #ytWin .bar2 small { color: var(--soft); font-size: 10px; flex: 1; }
 #ytWin .x2 { background: none; font-size: 14px; padding: 2px 4px; }
 #ytWin iframe { display: block; width: 200px; height: 200px; border: 0; background: #000; }
+
+.newVer { position: absolute; left: 50%; top: 56px; transform: translateX(-50%); background: linear-gradient(180deg, #8fe8a0, #4fcf6f); color: #fff; font-size: 15px; padding: 8px 16px; border-radius: 99px; box-shadow: 0 4px 0 #34a853; z-index: 6; }
+#online { cursor: pointer; }
