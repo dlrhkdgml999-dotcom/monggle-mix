@@ -21,7 +21,7 @@ export function makeFakeDb(uid) {
         if (j !== l.last) { l.last = j; l.cb(snap(v)); }
       } else {
         const v = get(l.path) || {};
-        for (const k of Object.keys(v)) if (!l.seen.has(k)) { l.seen.add(k); l.cb(snap(v[k])); }
+        for (const k of Object.keys(v)) if (!l.seen.has(k)) { l.seen.add(k); l.cb({ ...snap(v[k]), key: k }); }
       }
     }
   }

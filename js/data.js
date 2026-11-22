@@ -66,16 +66,48 @@ export const SPECIES = {
   ikki:     { name: '이끼거북', stage: 2, elems: ['water', 'grass'], role: 'tank',
               hp: 140, atk: 8, range: 1.6, speed: 2.6,
               skill: { name: '연잎 방패', type: 'shield', power: 0.5, cd: 14, dur: 6 } },
+
+  // 달빛 버섯숲 1단계
+  banjjak:  { name: '반짝반디', stage: 1, elems: ['fire'], role: 'ranged',
+              hp: 52, atk: 9, range: 5.5, speed: 3.8,
+              skill: { name: '반딧불 폭죽', type: 'aoe', power: 2.2, cd: 8, radius: 2.6 } },
+  iseul:    { name: '이슬달팽', stage: 1, elems: ['water'], role: 'tank',
+              hp: 95, atk: 6, range: 1.5, speed: 2.4,
+              skill: { name: '이슬 방울막', type: 'shield', power: 0.5, cd: 13, dur: 5 } },
+  dotori:   { name: '도토리다람', stage: 1, elems: ['grass'], role: 'melee',
+              hp: 60, atk: 10, range: 1.5, speed: 4.2,
+              skill: { name: '도토리 던지기', type: 'proj', power: 3.2, cd: 7 } },
+
+  // 3단계 (2단계끼리 섞기, Lv15 이상)
+  haenim:   { name: '해님사자', stage: 3, elems: ['fire'], role: 'aoe',
+              hp: 170, atk: 21, range: 1.9, speed: 3.8,
+              skill: { name: '해님 폭발', type: 'aoe', power: 3.4, cd: 9, radius: 3.6 } },
+  gorae:    { name: '구름고래', stage: 3, elems: ['water'], role: 'tank',
+              hp: 240, atk: 13, range: 1.9, speed: 3.0,
+              skill: { name: '고래 분수', type: 'heal', power: 0.5, cd: 11 } },
+  saseum:   { name: '숲사슴', stage: 3, elems: ['grass'], role: 'healer',
+              hp: 190, atk: 15, range: 4.5, speed: 3.6,
+              skill: { name: '숲의 축복', type: 'heal', power: 0.6, cd: 11 } },
+  unicorn:  { name: '무지개유니콘', stage: 3, elems: ['fire', 'water', 'grass'], role: 'ranged',
+              hp: 200, atk: 22, range: 6, speed: 4.2,
+              skill: { name: '무지개 빛', type: 'aoe', power: 3.0, cd: 9, radius: 4 } },
 };
 
 export const DEX_ORDER = ['bulssi', 'hotteok', 'mulbang', 'jogae', 'saessak', 'ggulbeol',
-  'bulkkot', 'pado', 'supgom', 'gimmung', 'hwabun', 'ikki'];
+  'banjjak', 'iseul', 'dotori',
+  'bulkkot', 'pado', 'supgom', 'gimmung', 'hwabun', 'ikki',
+  'haenim', 'gorae', 'saseum', 'unicorn'];
 
 // 조합: 정확한 짝 먼저, 없으면 속성 짝으로
 const EXACT = {
   'bulssi+hotteok': 'bulkkot',
   'jogae+mulbang': 'pado',
   'ggulbeol+saessak': 'supgom',
+  // 3단계
+  'bulkkot+hwabun': 'haenim', 'bulkkot+gimmung': 'haenim',
+  'gimmung+pado': 'gorae', 'ikki+pado': 'gorae',
+  'hwabun+supgom': 'saseum', 'ikki+supgom': 'saseum',
+  'bulkkot+pado': 'unicorn', 'bulkkot+supgom': 'unicorn', 'pado+supgom': 'unicorn',
 };
 const BY_ELEM = {
   'fire+water': 'gimmung',
@@ -97,6 +129,8 @@ export function mixResult(spA, spB) {
 
 export const MIX_COST = 10;      // 반짝가루
 export const MIX_MIN_LV = 10;    // 재료 최소 레벨
+export const MIX_MIN_LV3 = 15;   // 3단계 재료 최소 레벨
+export function mixMinLv(spA, spB) { return Math.max(SPECIES[spA].stage, SPECIES[spB].stage) >= 2 ? MIX_MIN_LV3 : MIX_MIN_LV; }
 export const BOX_MAX = 20;       // 보관함 칸
 export const MAX_LV = 30;
 
@@ -109,6 +143,8 @@ export const ZONES = [
     spawns: ['bulssi', 'hotteok', 'saessak', 'ggulbeol'], count: 11 },
   { id: 'lake', name: '물방울 호숫가', x: 4, z: -38, r: 20, lv: [6, 15],
     spawns: ['mulbang', 'jogae', 'saessak'], count: 10 },
+  { id: 'moon', name: '달빛 버섯숲', x: -46, z: -16, r: 20, lv: [14, 24],
+    spawns: ['banjjak', 'banjjak', 'iseul', 'iseul', 'dotori', 'dotori', 'bulkkot', 'pado', 'supgom'], count: 12 },
 ];
 
 export const CAPTURE_RATE = 0.10;      // 기획서 기본 확률
@@ -123,6 +159,9 @@ export const QUESTS = [
   { text: '믹스 솥에서 두 마리 섞어 보기', to: { x: 0, z: 1 }, done: s => (s.mixes || 0) >= 1 },
   { text: '물방울 호숫가에서 물 몽글이 만나기', to: { x: 6, z: -32 }, done: s => s.dex.mulbang || s.dex.jogae },
   { text: '대왕버섯 물리치기 (들판 동쪽 끝)', to: 'boss', done: s => (s.bossKills || 0) >= 1 },
-  { text: '도감 12칸 모두 채우기', count: s => [Object.keys(s.dex).length, 12], done: s => Object.keys(s.dex).length >= 12 },
+  { text: '서쪽 달빛 버섯숲 가 보기 (Lv14 이상 추천)', to: { x: -30, z: -12 }, done: (s, g) => g.lastZone?.id === 'moon' },
+  { text: '2단계 몽글이 둘을 섞어 3단계 만들기 (Lv15 둘)', done: s => ['haenim', 'gorae', 'saseum', 'unicorn'].some(k => s.dex[k]) },
+  { text: '무지개유니콘 만나기', done: s => !!s.dex.unicorn },
+  { text: '도감 모두 채우기', count: s => [Object.keys(s.dex).length, DEX_ORDER.length], done: s => Object.keys(s.dex).length >= DEX_ORDER.length },
 ];
 export const QUEST_REWARD = 10;

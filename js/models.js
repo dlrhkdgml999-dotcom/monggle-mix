@@ -1,6 +1,7 @@
 // 몽글믹스 — 코드로 만드는 귀여운 3D 모델 (몽글이 12종 + 주인공)
 // 외부 그림 파일 없이 동그란 도형을 조합해서 만든다. 모양을 바꾸려면 여기만 고치면 된다.
 import * as THREE from '../lib/three.min.js';
+import { SPECIES } from './data.js';
 
 // 툰 셰이딩용 3단 그라데이션
 const gradTex = (() => {
@@ -76,6 +77,13 @@ const PAL = {
   gimmung:  [{ a: 0xfff4ec, b: 0xffb38a }, { a: 0xe6e0ff, b: 0x9fe7ff }],
   hwabun:   [{ a: 0xff8f3d, b: 0xff6fa5 }, { a: 0xf7f7f7, b: 0xffd23d }],
   ikki:     [{ a: 0x7fbf6a, b: 0x5ab4ff }, { a: 0xffd28a, b: 0x7be0c8 }],
+  banjjak:  [{ a: 0x6b5a8e, b: 0xfff27a }, { a: 0xffc2e0, b: 0x9ffcff }],
+  iseul:    [{ a: 0xa8e6ff, b: 0xc9a8ff }, { a: 0xffe3a8, b: 0xff9ecb }],
+  dotori:   [{ a: 0xc88a5a, b: 0x8a5a3a }, { a: 0xf2f2f2, b: 0xb48cff }],
+  haenim:   [{ a: 0xffa64d, b: 0xffe066 }, { a: 0xf4f4ff, b: 0x9fd8ff }],
+  gorae:    [{ a: 0x5ab0ff, b: 0xffffff }, { a: 0xff9ecb, b: 0xfff6d6 }],
+  saseum:   [{ a: 0xd9b48a, b: 0x6fcf6a }, { a: 0xf6f6f6, b: 0xffb3d9 }],
+  unicorn:  [{ a: 0xffffff, b: 0xffd34d }, { a: 0x2e2a4a, b: 0xb48cff }],
 };
 
 const BUILD = {
@@ -248,6 +256,103 @@ const BUILD = {
     g.add(ball(toon(0xff9ecb), 0.1, 0.67, 0.05, 0.04));
     face(g, 0.46, 0.7, 0.1, 0.8);
   },
+  banjjak(g, c) { // 엉덩이가 반짝이는 반딧불
+    const body = toon(c.a);
+    g.add(ball(body, 0, 0.6, 0.05, 0.3, 0.3, 0.3));
+    const glow = toon(c.b, { emissive: c.b, emissiveIntensity: 0.9 });
+    g.add(ball(glow, 0, 0.52, -0.3, 0.24, 0.22, 0.26));
+    const wing = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.65 });
+    for (const sx of [-1, 1]) {
+      const w = ball(wing, sx * 0.26, 0.86, -0.08, 0.18, 0.1, 0.04); w.rotation.z = sx * 0.6; w.userData.wing = sx; g.add(w);
+      const an = cyl(body, sx * 0.1, 0.92, 0.12, 0.015, 0.2); an.rotation.z = -sx * 0.35; g.add(an);
+      g.add(ball(glow, sx * 0.14, 1.02, 0.14, 0.045));
+    }
+    face(g, 0.62, 0.3, 0.14);
+  },
+  iseul(g, c) { // 이슬달팽이
+    const body = toon(c.a, { transparent: true, opacity: 0.92 });
+    g.add(ball(body, 0, 0.18, 0.1, 0.26, 0.17, 0.5));
+    g.add(ball(body, 0, 0.42, 0.42, 0.2, 0.22, 0.18));
+    for (const sx of [-1, 1]) { g.add(cyl(body, sx * 0.08, 0.66, 0.44, 0.02, 0.18)); g.add(ball(body, sx * 0.08, 0.76, 0.44, 0.04)); }
+    const sh = toon(c.b);
+    for (let i = 0; i < 3; i++) {
+      const t = new THREE.Mesh(new THREE.TorusGeometry(0.28 - i * 0.08, 0.08 - i * 0.015, 10, 24), sh);
+      t.rotation.y = Math.PI / 2; t.position.set(0, 0.46 + i * 0.04, -0.1 - i * 0.02); g.add(t);
+    }
+    g.add(ball(toon(0xffffff, { transparent: true, opacity: 0.8 }), 0.05, 0.86, -0.12, 0.06));
+    face(g, 0.44, 0.58, 0.09, 0.8);
+  },
+  dotori(g, c) { // 도토리 모자 다람쥐
+    const body = toon(c.a);
+    g.add(ball(body, 0, 0.4, 0, 0.3, 0.34, 0.28));
+    g.add(ball(body, 0, 0.78, 0.04, 0.27, 0.25, 0.25));
+    g.add(ball(toon(0xfff0dc), 0, 0.38, 0.17, 0.18, 0.22, 0.14));
+    const cap = toon(c.b);
+    g.add(ball(cap, 0, 0.98, 0.02, 0.24, 0.12, 0.24));
+    g.add(cyl(cap, 0, 1.1, 0.02, 0.025, 0.08));
+    for (const sx of [-1, 1]) { const e = cone(body, sx * 0.17, 1.0, 0, 0.06, 0.14); g.add(e); g.add(ball(body, sx * 0.12, 0.06, 0.1, 0.08, 0.06, 0.1)); }
+    const tail = toon(c.a);
+    for (let i = 0; i < 4; i++) g.add(ball(tail, 0, 0.3 + i * 0.17, -0.32 - Math.sin(i * 0.8) * 0.12, 0.16 + i * 0.02));
+    face(g, 0.8, 0.27, 0.12);
+  },
+  haenim(g, c) { // 해님 갈기 사자
+    const body = toon(c.a);
+    g.add(ball(body, 0, 0.5, -0.1, 0.42, 0.38, 0.5));
+    for (const sx of [-1, 1]) for (const dz of [-0.35, 0.2]) g.add(cyl(body, sx * 0.22, 0.14, dz, 0.08, 0.28));
+    const mane = toon(c.b, { emissive: c.b, emissiveIntensity: 0.45 });
+    for (let i = 0; i < 12; i++) {
+      const a = i / 12 * Math.PI * 2;
+      g.add(ball(mane, Math.cos(a) * 0.36, 0.92 + Math.sin(a) * 0.36, 0.28, 0.14, 0.14, 0.1));
+    }
+    g.add(ball(body, 0, 0.92, 0.34, 0.3, 0.29, 0.26));
+    for (const sx of [-1, 1]) g.add(ball(body, sx * 0.2, 1.16, 0.34, 0.07));
+    const tail = cyl(body, 0, 0.6, -0.62, 0.04, 0.4); tail.rotation.x = -0.6; g.add(tail);
+    g.add(ball(mane, 0, 0.78, -0.78, 0.1));
+    face(g, 0.94, 0.58, 0.12, 0.9);
+  },
+  gorae(g, c) { // 구름을 얹은 고래
+    const body = toon(c.a);
+    g.add(ball(body, 0, 0.55, 0, 0.5, 0.42, 0.62));
+    g.add(ball(toon(0xe6f4ff), 0, 0.36, 0.12, 0.38, 0.22, 0.48));
+    g.add(ball(body, 0, 0.62, -0.62, 0.14, 0.12, 0.16));
+    for (const sx of [-1, 1]) { const tf = ball(body, sx * 0.16, 0.74, -0.74, 0.17, 0.05, 0.1); tf.rotation.z = sx * 0.35; g.add(tf); }
+    for (const sx of [-1, 1]) { const f = ball(body, sx * 0.48, 0.38, 0.1, 0.16, 0.05, 0.12); f.rotation.z = sx * 0.4; g.add(f); }
+    const cloud = toon(c.b);
+    for (const [x, y, z, r] of [[0, 1.02, -0.05, 0.2], [0.18, 0.98, 0, 0.15], [-0.18, 0.98, -0.02, 0.15], [0.06, 1.12, 0.04, 0.12]]) g.add(ball(cloud, x, y, z, r));
+    const sp = toon(0x9fe0ff, { transparent: true, opacity: 0.8 });
+    for (const [x, y, r] of [[0, 1.3, 0.06], [0.08, 1.42, 0.05], [-0.08, 1.4, 0.05]]) { const d = ball(sp, x, y, 0.1, r); d.userData.puff = y; g.add(d); }
+    face(g, 0.6, 0.6, 0.18);
+  },
+  saseum(g, c) { // 잎사귀 뿔 사슴
+    const body = toon(c.a);
+    g.add(ball(body, 0, 0.62, -0.08, 0.32, 0.3, 0.46));
+    for (const sx of [-1, 1]) for (const dz of [-0.32, 0.16]) g.add(cyl(body, sx * 0.16, 0.24, dz, 0.05, 0.48));
+    g.add(ball(body, 0, 1.05, 0.28, 0.24, 0.24, 0.24));
+    g.add(ball(toon(0xfff3e0), 0, 0.98, 0.48, 0.1, 0.08, 0.06));
+    for (let i = 0; i < 5; i++) g.add(ball(toon(0xfff6e6), (i % 2 ? 0.12 : -0.1), 0.72 + (i % 3) * 0.06, -0.2 + i * 0.08, 0.035));
+    const leaf = toon(c.b);
+    for (const sx of [-1, 1]) {
+      const br = cyl(toon(0xa8744f), sx * 0.13, 1.36, 0.24, 0.025, 0.3); br.rotation.z = -sx * 0.4; g.add(br);
+      for (const [dx, dy] of [[0.12, 1.5], [0.24, 1.42], [0.06, 1.6]]) g.add(ball(leaf, sx * dx, dy, 0.24, 0.07, 0.05, 0.04));
+      g.add(ball(toon(0xff9ecb), sx * 0.2, 1.56, 0.26, 0.04));
+      const ear = ball(body, sx * 0.24, 1.18, 0.22, 0.1, 0.05, 0.06); ear.rotation.z = sx * 0.4; g.add(ear);
+    }
+    face(g, 1.08, 0.5, 0.11, 0.85);
+  },
+  unicorn(g, c) { // 무지개 갈기 유니콘
+    const body = toon(c.a);
+    g.add(ball(body, 0, 0.66, -0.06, 0.34, 0.3, 0.48));
+    for (const sx of [-1, 1]) for (const dz of [-0.3, 0.18]) { g.add(cyl(body, sx * 0.16, 0.26, dz, 0.055, 0.5)); g.add(cyl(toon(0xb48cff), sx * 0.16, 0.03, dz, 0.065, 0.06)); }
+    g.add(ball(body, 0, 1.08, 0.3, 0.24, 0.24, 0.25));
+    const horn = cone(toon(c.b, { emissive: c.b, emissiveIntensity: 0.5 }), 0, 1.42, 0.38, 0.05, 0.3); horn.rotation.x = 0.3; g.add(horn);
+    const rainbow = [0xff8fa3, 0xffc46b, 0xfff07a, 0x8fe8a0, 0x7fd0ff, 0xb48cff];
+    rainbow.forEach((col, i) => {
+      g.add(ball(toon(col), 0, 1.22 - i * 0.09, 0.12 - i * 0.07, 0.08));
+      g.add(ball(toon(col), 0, 0.72 - i * 0.04, -0.52 - i * 0.05, 0.07));
+    });
+    for (const sx of [-1, 1]) g.add(cone(body, sx * 0.12, 1.32, 0.24, 0.05, 0.12));
+    face(g, 1.1, 0.52, 0.11, 0.85);
+  },
 };
 
 // 몽글이 만들기. 반환: { root(위치용), body(흔들림용), mats(채도 조절용) }
@@ -257,14 +362,11 @@ export function makeMonggle(sp, { shiny = false } = {}) {
   root.add(body);
   const pal = PAL[sp] ? PAL[sp][shiny ? 1 : 0] : { a: 0xcccccc, b: 0x999999 };
   BUILD[sp](body, pal);
-  const scale = { 1: 0.9, 2: 1.05 }[spStage(sp)] || 1;
+  const scale = { 1: 0.9, 2: 1.05, 3: 1.25 }[SPECIES[sp]?.stage] || 1;
   body.scale.setScalar(scale);
   return finishModel(root, body);
 }
 
-function spStage(sp) {
-  return ['bulkkot', 'pado', 'supgom', 'gimmung', 'hwabun', 'ikki'].includes(sp) ? 2 : 1;
-}
 
 // 주인공: 큰 머리 2등신
 export function makeHero(look = 'boy') {

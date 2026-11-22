@@ -590,7 +590,7 @@ export class Game {
 
   refreshVivid() {
     const n = Object.keys(this.state.dex).length;
-    this.world.setVivid(Math.min(1, n / 12));
+    this.world.setVivid(Math.min(1, n / 12)); // 1·2단계 12종을 다 모으면 가장 선명
   }
 
   // ---------- 스킬 ----------

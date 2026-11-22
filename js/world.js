@@ -2,7 +2,8 @@
 import * as THREE from '../lib/three.min.js';
 import { toon } from './models.js';
 
-export const BOUNDS = { minX: -30, maxX: 60, minZ: -64, maxZ: 26 };
+export const BOUNDS = { minX: -68, maxX: 60, minZ: -64, maxZ: 26 };
+export const MOON = { x: -46, z: -16 };
 export const POND = { x: 4, z: -47, r: 9 };
 export const CAULDRON = { x: 0, z: -2 };
 export const HOME = { x: -7, z: 6 };
@@ -16,6 +17,7 @@ function rng(seed) { // 고정 난수 → 맵이 매번 같게
 
 export function buildWorld(scene) {
   const colorMats = []; // 색 되찾기용
+  const fireflies = [];
   const track = (m) => { colorMats.push({ m, base: m.color.clone() }); return m; };
   const R = rng(7);
 
@@ -25,9 +27,9 @@ export function buildWorld(scene) {
 
   // 바닥
   const groundMat = track(toon(0x9fe08a));
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(140, 140), groundMat);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(180, 140), groundMat);
   ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; ground.name = 'ground';
-  ground.position.set(15, 0, -19);
+  ground.position.set(-4, 0, -19);
   scene.add(ground);
 
   const disc = (x, z, r, color, y = 0.01) => {
@@ -46,6 +48,29 @@ export function buildWorld(scene) {
   };
   path(12, 1, 22, 4);
   path(2, -12, 4, -28);
+  path(-12, -2, -28, -10);
+  // 달빛 버섯숲: 보랏빛 땅 + 빛나는 큰 버섯
+  disc(MOON.x, MOON.z, 20, 0x9b8fd1, 0.009);
+  disc(MOON.x, MOON.z, 14, 0xa99de0, 0.011);
+  const glowCols = [0x7fd0ff, 0xff9ecb, 0xb48cff, 0x9fffe0];
+  for (let i = 0; i < 16; i++) {
+    const a = R() * Math.PI * 2, d = 6 + R() * 13;
+    const x = MOON.x + Math.cos(a) * d, z = MOON.z + Math.sin(a) * d;
+    const g = new THREE.Group();
+    const h = 0.8 + R() * 1.4;
+    const st = new THREE.Mesh(new THREE.CylinderGeometry(0.12 * h, 0.18 * h, h, 8), track(toon(0xf3eaff)));
+    st.position.y = h / 2; st.castShadow = true; g.add(st);
+    const col = glowCols[i % 4];
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.55 * h, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), track(toon(col, { emissive: col, emissiveIntensity: 0.45 })));
+    cap.position.y = h * 0.95; cap.scale.y = 0.7; cap.castShadow = true; g.add(cap);
+    g.position.set(x, 0, z); scene.add(g);
+  }
+  for (let i = 0; i < 26; i++) { // 반딧불 점
+    const a = R() * Math.PI * 2, d = R() * 18;
+    const f = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 4), new THREE.MeshBasicMaterial({ color: 0xfff27a }));
+    f.position.set(MOON.x + Math.cos(a) * d, 0.6 + R() * 1.6, MOON.z + Math.sin(a) * d);
+    f.userData.fly = R() * 6; scene.add(f); fireflies.push(f);
+  }
   // 들판 (조금 더 진한 초록)
   disc(34, 6, 20, 0x8bd977, 0.008);
   // 호숫가 모래 + 물
@@ -98,7 +123,8 @@ export function buildWorld(scene) {
   }
   // 구역 사이 나무
   for (const [x, z, k] of [[14, -10, 0], [17, -14, 2], [-16, -10, 1], [-20, -20, 2], [24, -22, 0], [20, -30, 1],
-    [-14, -32, 0], [-18, 12, 2], [10, 16, 1], [46, 20, 0], [52, -8, 2], [28, -8, 1], [-24, 0, 0], [40, -14, 0]]) {
+    [-14, -32, 0], [-18, 12, 2], [10, 16, 1], [46, 20, 0], [52, -8, 2], [28, -8, 1], [-24, 6, 0], [40, -14, 0],
+    [-26, -30, 2], [-30, 10, 1], [-58, 8, 0], [-62, -36, 2]]) {
     tree(x, z, 1.1, k);
   }
 
@@ -154,7 +180,7 @@ export function buildWorld(scene) {
     b.position.y = 1.3; g.add(b);
     g.position.set(x, 0, z); g.rotation.y = rot; scene.add(g);
   };
-  sign(13, 4, -1.2); sign(4, -13, 0.1);
+  sign(13, 4, -1.2); sign(4, -13, 0.1); sign(-13, -3, 1.2);
 
   // 믹스 솥
   const caul = new THREE.Group();
@@ -208,6 +234,7 @@ export function buildWorld(scene) {
       b.position.set(Math.sin(t * 20 + b.id) * 0.5, 1.5 + t * 1.2, Math.cos(t * 17 + b.id) * 0.5);
       b.material.opacity = 0.8 * (1 - t);
     }
+    for (const f of fireflies) { const t = time + f.userData.fly; f.position.y += Math.sin(t * 2) * 0.004; f.position.x += Math.cos(t * 1.3) * 0.006; f.material.color.setHSL(0.15, 1, 0.6 + Math.sin(t * 4) * 0.25); }
     for (const c of clouds) {
       c.position.x += dt * 0.6;
       if (c.position.x > BOUNDS.maxX + 20) c.position.x = BOUNDS.minX - 20;

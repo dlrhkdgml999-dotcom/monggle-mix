@@ -121,6 +121,11 @@ export class Net {
     });
     // 혹시 접속 표시가 지워져도 15초마다 다시 켜기
     setInterval(() => { if (!document.hidden) this.writePresence(); }, 15000);
+    // 선물 우편함
+    this.M.onChildAdded(ref(this.db, 'mail/' + this.uid), snap => {
+      const v = snap.val(); if (!v) return;
+      this.ui.giftArrived(v, () => this.M.remove(ref(this.db, `mail/${this.uid}/${snap.key ?? v.key}`)).catch(() => {}));
+    });
     onValue(ref(this.db, 'presence'), snap => {
       const all = snap.val() || {};
       const next = {};
@@ -132,6 +137,7 @@ export class Net {
       }
       this.ui.renderOnline(this.partner());
       const p = this.partner();
+      if (p) { this.partnerUid = p.uid; this.partnerName = p.name; try { localStorage.setItem('monggle-partner', JSON.stringify({ uid: p.uid, name: p.name })); } catch {} }
       if (p && p.v && p.v !== VERSION && this.warnedV !== p.v) {
         this.warnedV = p.v;
         this.ui.toast(p.v > VERSION ? '상대가 더 새 버전이에요. 새로고침해 주세요' : `${p.name}의 게임이 옛날 버전이에요. 새로고침해 달라고 해 주세요`);
@@ -262,6 +268,19 @@ export class Net {
     this.voice = null;
     if (this.audio) this.audio.srcObject = null;
     this.ui.setPartnerVoice(0);
+  }
+
+  // ---------- 선물 ----------
+  giftTarget() {
+    if (this.partnerUid) return { uid: this.partnerUid, name: this.partnerName };
+    try { return JSON.parse(localStorage.getItem('monggle-partner')); } catch { return null; }
+  }
+  async sendGift(gift) {
+    const to = this.giftTarget();
+    if (!this.on || !to) return false;
+    const key = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    await this.M.set(this.M.ref(this.db, `mail/${to.uid}/${key}`), { ...gift, key, from: this.state.name, t: Date.now() });
+    return true;
   }
 
   // 통화·같이 사냥 상태 (점검용)

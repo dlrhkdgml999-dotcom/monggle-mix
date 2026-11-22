@@ -239,3 +239,6 @@ button { font-family: inherit; color: inherit; border: 0; cursor: pointer; }
 
 .newVer { position: absolute; left: 50%; top: 56px; transform: translateX(-50%); background: linear-gradient(180deg, #8fe8a0, #4fcf6f); color: #fff; font-size: 15px; padding: 8px 16px; border-radius: 99px; box-shadow: 0 4px 0 #34a853; z-index: 6; }
 #online { cursor: pointer; }
+
+.giftDust { display: block; margin: 10px auto 0; font-size: 14px; padding: 7px 14px; }
+.gmsg { font-size: 17px; color: #d9608f; margin: 6px 0; }

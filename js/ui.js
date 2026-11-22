@@ -1,6 +1,7 @@
 // 몽글믹스 — 화면 UI (상단 정보, 스킬 버튼, 가방, 도감, 믹스 솥)
 import * as THREE from '../lib/three.min.js';
-import { SPECIES, ELEM, DEX_ORDER, mixResult, MIX_COST, MIX_MIN_LV, BOX_MAX, expToNext, MAX_LV, QUESTS } from './data.js';
+import { SPECIES, ELEM, DEX_ORDER, mixResult, mixMinLv, MIX_COST, MIX_MIN_LV, BOX_MAX, expToNext, MAX_LV, QUESTS } from './data.js';
+import { BOUNDS } from './world.js';
 import { makeMonggle } from './models.js';
 import { sfx, isMuted, setMuted } from './sfx.js';
 import { newSave } from './save.js';
@@ -198,14 +199,14 @@ export class UI {
     const c = $('#minimap'), x = c.getContext('2d'), g = this.game;
     const W = c.width, H = c.height;
     // 월드 좌표 → 미니맵
-    const B = { minX: -30, maxX: 60, minZ: -64, maxZ: 26 };
+    const B = BOUNDS;
     const k = Math.min(W / (B.maxX - B.minX), H / (B.maxZ - B.minZ));
     const ox = (W - (B.maxX - B.minX) * k) / 2, oz = (H - (B.maxZ - B.minZ) * k) / 2;
     const P = (px, pz) => [ox + (px - B.minX) * k, oz + (pz - B.minZ) * k];
     x.clearRect(0, 0, W, H);
     x.fillStyle = 'rgba(159, 224, 138, .9)'; x.beginPath(); x.roundRect(0, 0, W, H, 22); x.fill();
     const circ = (px, pz, r, col) => { const [a, b] = P(px, pz); x.fillStyle = col; x.beginPath(); x.arc(a, b, r * k, 0, 7); x.fill(); };
-    circ(34, 6, 20, '#8bd977'); circ(4, -47, 13, '#f6e6b4'); circ(4, -47, 9, '#6cc8ff'); circ(0, 0, 13, '#f3e2b8');
+    circ(34, 6, 20, '#8bd977'); circ(-46, -16, 20, '#a99de0'); circ(4, -47, 13, '#f6e6b4'); circ(4, -47, 9, '#6cc8ff'); circ(0, 0, 13, '#f3e2b8');
     const dot = (px, pz, r, col, ring) => { const [a, b] = P(px, pz); x.fillStyle = col; x.beginPath(); x.arc(a, b, r, 0, 7); x.fill(); if (ring) { x.lineWidth = 3; x.strokeStyle = ring; x.stroke(); } };
     for (const u of g.units) if (u.kind === 'wild' && !u.dead && !u.boss) dot(u.model.root.position.x, u.model.root.position.z, 3, 'rgba(90,70,110,.45)');
     if (g.boss && !g.boss.dead && !g.boss.removed) { const bp = g.boss.model.root.position; dot(bp.x, bp.z, 8, '#ff5f7a', '#fff'); }
@@ -443,10 +444,68 @@ export class UI {
     grid.innerHTML = s.monggles.map(m => this.monCard(m)).join('');
     b.appendChild(grid);
     b.appendChild(h('p', 'hint', '몽글이를 누르면 자세히 보고, 데리고 다닐지 정할 수 있어요.'));
+    const gd = h('button', 'btn ghost giftDust', '🎁 반짝가루 10개 선물하기');
+    gd.onclick = () => this.giftDust();
+    b.appendChild(gd);
     const rs = h('button', 'link reset', '처음부터 다시 하기');
     rs.onclick = () => this.confirmReset();
     b.appendChild(rs);
     grid.onclick = e => { const c = e.target.closest('.mcard'); if (c) this.openMon(+c.dataset.id); };
+  }
+
+  // ---------- 선물 ----------
+  giftMon(m) {
+    const s = this.state, to = this.net?.giftTarget?.();
+    if (!this.net?.on || !to) { this.toast('상대가 한 번이라도 접속해야 선물할 수 있어요'); return; }
+    if (s.monggles.length <= 1) { this.toast('마지막 한 마리는 선물할 수 없어요'); return; }
+    const b = this.openPanel(`🎁 ${to.name}에게 선물할까요?`);
+    b.insertAdjacentHTML('beforeend', `<div class="born"><img src="${icon(m.sp, m.shiny)}"><h3>${m.shiny ? '반짝이 ' : ''}${SPECIES[m.sp].name} <span class="lv">Lv ${m.lv}</span></h3></div>
+      <input id="gMsg" class="tin" maxlength="40" placeholder="한마디 (예: 귀엽게 키워 줘♥)">
+      <div class="btns center"><button class="btn" id="gOk">보내기</button><button class="btn ghost" id="gNo">아니요</button></div>`);
+    $('#gNo', b).onclick = () => this.openMon(m.id);
+    $('#gOk', b).onclick = async () => {
+      const msg = $('#gMsg', b).value.trim();
+      const ok = await this.net.sendGift({ kind: 'mon', mon: { sp: m.sp, lv: m.lv, shiny: !!m.shiny, ...(m.inh ? { inh: m.inh } : {}) }, msg }).catch(() => false);
+      if (!ok) { this.toast('선물을 못 보냈어요. 인터넷을 확인해 주세요'); return; }
+      s.monggles = s.monggles.filter(x => x !== m);
+      if (s.party.includes(m.id)) { s.party = s.party.filter(x => x !== m.id); if (!s.party.length) s.party.push(s.monggles[0].id); this.game.syncParty(); }
+      this.save(); sfx.befriend();
+      this.toast(`🎁 ${to.name}에게 ${SPECIES[m.sp].name}를 보냈어요`);
+      this.closePanel();
+    };
+  }
+  async giftDust() {
+    const s = this.state, to = this.net?.giftTarget?.();
+    if (!this.net?.on || !to) { this.toast('상대가 한 번이라도 접속해야 선물할 수 있어요'); return; }
+    if (s.dust < 10) { this.toast('반짝가루가 모자라요'); return; }
+    s.dust -= 10; this.save();
+    const ok = await this.net.sendGift({ kind: 'dust', dust: 10 }).catch(() => false);
+    if (!ok) { s.dust += 10; this.toast('선물을 못 보냈어요'); return; }
+    sfx.dust(); this.toast(`🎁 ${to.name}에게 반짝가루 10개를 보냈어요`); this.renderTop();
+  }
+  giftArrived(g, done) {
+    const s = this.state;
+    if (!this.game) { setTimeout(() => this.giftArrived(g, done), 1500); return; }
+    if (g.kind === 'mon' && s.monggles.length >= BOX_MAX) {
+      if (!this.boxWarned) { this.boxWarned = true; this.toast(`🎁 ${g.from}의 선물이 왔는데 가방이 꽉 찼어요. 자리를 만들면 받아져요`); }
+      setTimeout(() => this.giftArrived(g, done), 20000); return;
+    }
+    this.boxWarned = false;
+    let what = '';
+    if (g.kind === 'mon' && g.mon && SPECIES[g.mon.sp]) {
+      const m = { id: s.nextId++, sp: g.mon.sp, lv: g.mon.lv || 1, exp: 0, shiny: !!g.mon.shiny, ...(g.mon.inh ? { inh: g.mon.inh } : {}) };
+      s.monggles.push(m); s.dex[m.sp] = (s.dex[m.sp] || 0) + 1;
+      what = `<img src="${icon(m.sp, m.shiny)}"><h3>${m.shiny ? '반짝이 ' : ''}${SPECIES[m.sp].name} <span class="lv">Lv ${m.lv}</span></h3>`;
+      this.game.refreshVivid();
+    } else if (g.kind === 'dust') {
+      s.dust += g.dust || 0;
+      what = `<div style="font-size:70px">✦</div><h3>반짝가루 ${g.dust}개</h3>`;
+    } else { done(); return; }
+    this.save(); done(); sfx.born(false); this.renderTop();
+    const b = this.openPanel(`🎁 ${g.from}의 선물이 도착했어요!`);
+    b.insertAdjacentHTML('beforeend', `<div class="born">${what}${g.msg ? `<p class="gmsg">“${g.msg.replace(/</g, '&lt;')}”</p>` : ''}</div>
+      <div class="btns center"><button class="btn" id="gThanks">고마워 ❤️</button></div>`);
+    $('#gThanks', b).onclick = () => { this.closePanel(); this.emote(this.game.hero.model.root, '❤️'); this.net.sendEmote('❤️'); };
   }
 
   confirmReset() {
@@ -483,11 +542,13 @@ export class UI {
           ${st ? `<div class="kv"><span>체력</span><b>${Math.ceil(st.hp)} / ${st.maxHp}</b></div>` : ''}
           <div class="btns">
             <button class="btn ${inParty ? 'ghost' : ''}" id="tgl">${inParty ? '쉬게 하기' : '데리고 다니기'}</button>
+            <button class="btn ghost" id="gift">🎁 선물</button>
             <button class="btn ghost" id="back">← 가방</button>
           </div>
         </div>
       </div>`);
     $('#back', b).onclick = () => this.openBox();
+    $('#gift', b).onclick = () => this.giftMon(m);
     $('#tgl', b).onclick = () => {
       if (inParty) {
         if (s.party.length <= 1) { this.toast('최소 한 마리는 데리고 다녀야 해요'); return; }
@@ -548,9 +609,12 @@ export class UI {
       this.openMix(p);
     };
     const btn = $('#doMix', b);
-    const ok = a && c && res && s.dust >= MIX_COST;
+    const need = a && c ? mixMinLv(a.sp, c.sp) : MIX_MIN_LV;
+    const lvOk = a && c && a.lv >= need && c.lv >= need;
+    const ok = a && c && res && lvOk && s.dust >= MIX_COST;
     btn.disabled = !ok;
-    if (a && c && res && s.dust < MIX_COST) btn.textContent = `반짝가루가 ${MIX_COST - s.dust}개 모자라요`;
+    if (a && c && res && !lvOk) btn.textContent = `3단계는 둘 다 Lv${need}부터 섞을 수 있어요`;
+    else if (a && c && res && s.dust < MIX_COST) btn.textContent = `반짝가루가 ${MIX_COST - s.dust}개 모자라요`;
     btn.onclick = () => ok && this.doMix(a, c, res);
   }
 
