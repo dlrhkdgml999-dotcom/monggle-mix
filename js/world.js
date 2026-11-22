@@ -17,6 +17,7 @@ function rng(seed) { // 고정 난수 → 맵이 매번 같게
 
 export function buildWorld(scene) {
   const colorMats = []; // 색 되찾기용
+  const statics = new THREE.Group(); // 움직이지 않는 장식 → 나중에 합쳐서 가볍게
   const fireflies = [];
   const track = (m) => { colorMats.push({ m, base: m.color.clone() }); return m; };
   const R = rng(7);
@@ -63,7 +64,7 @@ export function buildWorld(scene) {
     const col = glowCols[i % 4];
     const cap = new THREE.Mesh(new THREE.SphereGeometry(0.55 * h, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), track(toon(col, { emissive: col, emissiveIntensity: 0.45 })));
     cap.position.y = h * 0.95; cap.scale.y = 0.7; cap.castShadow = true; g.add(cap);
-    g.position.set(x, 0, z); scene.add(g);
+    g.position.set(x, 0, z); statics.add(g);
   }
   for (let i = 0; i < 26; i++) { // 반딧불 점
     const a = R() * Math.PI * 2, d = R() * 18;
@@ -81,10 +82,10 @@ export function buildWorld(scene) {
   for (let i = 0; i < 7; i++) { // 연잎
     const a = R() * Math.PI * 2, d = R() * (POND.r - 2);
     const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.05, 16), track(toon(0x5cbf5a)));
-    pad.position.set(POND.x + Math.cos(a) * d, 0.08, POND.z + Math.sin(a) * d); scene.add(pad);
+    pad.position.set(POND.x + Math.cos(a) * d, 0.08, POND.z + Math.sin(a) * d); statics.add(pad);
     if (i % 2 === 0) {
       const f = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), track(toon(0xff9ecb)));
-      f.position.copy(pad.position).add(new THREE.Vector3(0.2, 0.12, 0)); scene.add(f);
+      f.position.copy(pad.position).add(new THREE.Vector3(0.2, 0.12, 0)); statics.add(f);
     }
   }
 
@@ -109,7 +110,7 @@ export function buildWorld(scene) {
         ap.position.set(Math.cos(i * 2) * 0.7, 1.6 + i * 0.15, Math.sin(i * 2) * 0.7); g.add(ap);
       }
     }
-    g.position.set(x, 0, z); g.scale.setScalar(s); scene.add(g);
+    g.position.set(x, 0, z); g.scale.setScalar(s); statics.add(g);
   };
   // 맵 테두리 숲
   for (let i = 0; i < 90; i++) {
@@ -135,9 +136,9 @@ export function buildWorld(scene) {
     const z = BOUNDS.minZ + R() * (BOUNDS.maxZ - BOUNDS.minZ);
     if (Math.hypot(x, z) < 12 || Math.hypot(x - POND.x, z - POND.z) < POND.r + 1) continue;
     const f = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), track(toon(flowerCols[i % 5])));
-    f.position.set(x, 0.18, z); scene.add(f);
+    f.position.set(x, 0.18, z); statics.add(f);
     const st = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.18, 4), track(toon(0x5cbf5a)));
-    st.position.set(x, 0.09, z); scene.add(st);
+    st.position.set(x, 0.09, z); statics.add(st);
   }
   // 덤불
   for (let i = 0; i < 40; i++) {
@@ -145,7 +146,7 @@ export function buildWorld(scene) {
     const z = BOUNDS.minZ + 3 + R() * (BOUNDS.maxZ - BOUNDS.minZ - 6);
     if (Math.hypot(x, z) < 14 || Math.hypot(x - POND.x, z - POND.z) < POND.r + 2) continue;
     const b = new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8), track(toon(0x76c96a)));
-    b.scale.set(1.2, 0.7, 1); b.position.set(x, 0.3, z); b.castShadow = true; scene.add(b);
+    b.scale.set(1.2, 0.7, 1); b.position.set(x, 0.3, z); b.castShadow = true; statics.add(b);
   }
 
   // 마을 집
@@ -163,7 +164,7 @@ export function buildWorld(scene) {
     }
     const ch = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.9, 0.4), track(toon(0xc98b6b)));
     ch.position.set(0.7 * big, 3.3, -0.3); g.add(ch);
-    g.position.set(x, 0, z); g.rotation.y = rot; scene.add(g);
+    g.position.set(x, 0, z); g.rotation.y = rot; statics.add(g);
     return g;
   };
   house(-9, -7, 0xfff1e0, 0xff8f8f, 0.6);
@@ -178,7 +179,7 @@ export function buildWorld(scene) {
     p.position.y = 0.7; g.add(p);
     const b = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.6, 0.1), track(toon(0xf3d9a8)));
     b.position.y = 1.3; g.add(b);
-    g.position.set(x, 0, z); g.rotation.y = rot; scene.add(g);
+    g.position.set(x, 0, z); g.rotation.y = rot; statics.add(g);
   };
   sign(13, 4, -1.2); sign(4, -13, 0.1); sign(-13, -3, 1.2);
 
@@ -213,9 +214,11 @@ export function buildWorld(scene) {
       const p = new THREE.Mesh(new THREE.SphereGeometry(1.4 + R(), 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
       p.position.set(j * 1.5 - 2, R() * 0.6, R()); c.add(p);
     }
-    c.position.set(BOUNDS.minX + R() * 90, 16 + R() * 5, BOUNDS.minZ + R() * 90);
+    c.position.set(BOUNDS.minX + R() * 120, 34 + R() * 6, BOUNDS.minZ - 20 + R() * 90); c.scale.setScalar(1.8);
     scene.add(c); clouds.push(c);
   }
+
+  mergeStatics(scene, statics);
 
   // 색 되찾기: 0(파스텔·빛바램) → 1(선명)
   function setVivid(t) {
@@ -263,4 +266,37 @@ export function clampToWorld(p) {
   const cx = p.x - CAULDRON.x, cz = p.z - CAULDRON.z, cd = Math.hypot(cx, cz);
   if (cd < 1.6) { const k = 1.6 / (cd || 1); p.x = CAULDRON.x + cx * k; p.z = CAULDRON.z + cz * k; }
   return p;
+}
+
+// 움직이지 않는 장식을 같은 색·같은 구역끼리 하나로 합쳐서 그리는 횟수를 줄인다 (폰에서 부드럽게)
+function mergeStatics(scene, group) {
+  group.updateMatrixWorld(true);
+  const CELL = 30, buckets = new Map();
+  const wp = new THREE.Vector3();
+  group.traverse(o => {
+    if (!o.isMesh) return;
+    const m = o.material;
+    wp.setFromMatrixPosition(o.matrixWorld);
+    const cell = Math.floor(wp.x / CELL) + ',' + Math.floor(wp.z / CELL);
+    const key = m.color.getHexString() + (m.emissive ? m.emissive.getHexString() + m.emissiveIntensity : '') +
+      (m.transparent ? m.opacity : '') + '|' + (o.castShadow ? 1 : 0) + '|' + cell;
+    let b = buckets.get(key);
+    if (!b) { b = { mat: m, cast: o.castShadow, geos: [] }; buckets.set(key, b); }
+    b.geos.push((o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone()).applyMatrix4(o.matrixWorld));
+  });
+  for (const b of buckets.values()) {
+    let total = 0;
+    for (const g of b.geos) total += g.attributes.position.count;
+    const out = new THREE.BufferGeometry();
+    for (const n of ['position', 'normal']) {
+      const arr = new Float32Array(total * 3);
+      let off = 0;
+      for (const g of b.geos) { arr.set(g.attributes[n].array, off); off += g.attributes[n].array.length; }
+      out.setAttribute(n, new THREE.BufferAttribute(arr, 3));
+    }
+    out.computeBoundingSphere();
+    const mesh = new THREE.Mesh(out, b.mat);
+    mesh.castShadow = b.cast; mesh.receiveShadow = true;
+    scene.add(mesh);
+  }
 }

@@ -22,7 +22,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(30, 1, 0.5, 140);
+const camera = new THREE.PerspectiveCamera(30, 1, 0.5, 160);
 const hemi = new THREE.HemisphereLight(0xffffff, 0xa6d38f, 1.6);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff4e0, 1.9);
@@ -116,29 +116,73 @@ function begin(s) {
 }
 
 // ---------- 입력 ----------
+// 톡: 그 자리로 이동 / 몬스터 톡: 공격 / 누르고 끌기: 조이스틱 / 두 손가락: 확대·축소
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
-let pressing = false, dragTarget = false;
-function pick(e) {
-  ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+const pointers = new Map();
+let stick = null;      // { id, x0, y0, on }
+let pinch = null;      // { d0, z0 }
+let zoom = 1;
+const stickEl = document.createElement('div');
+stickEl.id = 'stick'; stickEl.innerHTML = '<i></i>'; stickEl.className = 'hidden';
+document.body.appendChild(stickEl);
+function pick(x, y) {
+  ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1);
   ray.setFromCamera(ndc, camera);
 }
 canvas.addEventListener('pointerdown', e => {
   if (!game || ui.panelOpen) return;
   net?.ac?.resume?.(); unlockSound();
-  pick(e);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 2) {
+    // 두 손가락 → 확대·축소
+    const [a, b] = [...pointers.values()];
+    pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y), z0: zoom };
+    endStick();
+    return;
+  }
+  pick(e.clientX, e.clientY);
   const hits = ray.intersectObjects(game.pickables(), false);
-  if (hits.length) { game.tapUnit(hits[0].object.userData.unit); pressing = false; return; }
-  const g = ray.intersectObject(world.ground)[0];
-  if (g) { game.tapGround(g.point, false); pressing = true; dragTarget = true; }
+  if (hits.length) { game.tapUnit(hits[0].object.userData.unit); return; }
+  stick = { id: e.pointerId, x0: e.clientX, y0: e.clientY, on: false };
 });
 canvas.addEventListener('pointermove', e => {
-  if (!pressing || !game) return;
-  pick(e);
-  const g = ray.intersectObject(world.ground)[0];
-  if (g) game.tapGround(g.point, true);
+  if (!game || !pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && pointers.size >= 2) {
+    const [a, b] = [...pointers.values()];
+    zoom = Math.max(0.65, Math.min(1.3, pinch.z0 * pinch.d0 / Math.max(20, Math.hypot(a.x - b.x, a.y - b.y))));
+    return;
+  }
+  if (!stick || stick.id !== e.pointerId) return;
+  const dx = e.clientX - stick.x0, dy = e.clientY - stick.y0, d = Math.hypot(dx, dy);
+  if (!stick.on && d > 16) {
+    stick.on = true;
+    stickEl.classList.remove('hidden');
+    stickEl.style.left = stick.x0 + 'px'; stickEl.style.top = stick.y0 + 'px';
+  }
+  if (stick.on) {
+    const k = Math.min(1, d / 50);
+    stickEl.querySelector('i').style.transform = `translate(${dx / d * k * 40}px, ${dy / d * k * 40}px)`;
+    // 화면 위쪽 = 월드 -z, 오른쪽 = +x (카메라가 남쪽에서 북쪽을 봄)
+    game.stickMove(d > 6 ? { x: dx / d, z: dy / d } : null);
+  }
 });
-addEventListener('pointerup', () => pressing = false);
-addEventListener('pointercancel', () => pressing = false);
+function endStick() { if (stick?.on) game?.stickMove(null); stick = null; stickEl.classList.add('hidden'); }
+function upHandler(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinch = null;
+  if (stick && stick.id === e.pointerId) {
+    if (!stick.on && game && !ui.panelOpen) {
+      pick(e.clientX, e.clientY);
+      const g = ray.intersectObject(world.ground)[0];
+      if (g) game.tapGround(g.point, false);
+    }
+    endStick();
+  }
+}
+addEventListener('pointerup', upHandler);
+addEventListener('pointercancel', upHandler);
+addEventListener('wheel', e => { zoom = Math.max(0.65, Math.min(1.3, zoom * (e.deltaY > 0 ? 1.08 : 0.93))); }, { passive: true });
 
 // 자동 테스트용: 같은 브라우저의 두 탭을 BroadcastChannel로 연결 (실제 계정 없이)
 function fakeLink(side) {
@@ -239,7 +283,7 @@ function loop() {
     game.update(dt);
     const hp = game.hero.model.root.position;
     const wide = innerWidth > innerHeight;
-    const off = wide ? new THREE.Vector3(0, 14.2, 14.2) : new THREE.Vector3(0, 18, 18);
+    const off = (wide ? new THREE.Vector3(0, 14.2, 14.2) : new THREE.Vector3(0, 18, 18)).multiplyScalar(zoom);
     camPos.lerp(off.add(hp), Math.min(1, dt * 5));
     camera.position.copy(camPos);
     look3.lerp(new THREE.Vector3(hp.x, 0.6, hp.z), Math.min(1, dt * 6));

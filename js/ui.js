@@ -96,6 +96,7 @@ export class UI {
       <div id="centerBtns"><button id="shopBtn" class="mixBtn shop hidden">🏪 상점</button><button id="mixBtn" class="mixBtn hidden">🍲 믹스 솥 열기</button></div>
       <div id="buffs"></div>
       <div id="skills"></div>
+      <button id="atkBtn" class="atkBtn">⚔️<small>공격</small></button>
       <button id="autoBtn" class="pill autoBtn">🤖 자동 <b>OFF</b></button>
       <div id="panel" class="hidden"><div class="sheet"><button class="x">✕</button><div class="body"></div></div></div>
     `;
@@ -112,6 +113,7 @@ export class UI {
     $('#panel .x').onclick = () => this.closePanel();
     $('#emoBtn').onclick = () => { $('#emoTray').classList.toggle('hidden'); sfx.tap(); };
     $('#shopBtn').onclick = () => this.openShop();
+    $('#atkBtn').onpointerdown = e => { e.stopPropagation(); if (this.game.attackNearest()) this.pulse($('#atkBtn')); };
     $('#autoBtn').onclick = () => {
       this.state.auto = !this.state.auto; this.drawAuto(); this.save(); sfx.tap();
       this.toast(this.state.auto ? '🤖 자동 사냥 켬: 가까운 몬스터를 알아서 공격하고 기술·물약도 써요' : '자동 사냥 끔');
@@ -288,6 +290,12 @@ export class UI {
     u.bar.style.transform = `translate(${s.x}px, ${s.y}px)`;
     u.bar.querySelector('i').style.width = (u.hp / u.maxHp * 100) + '%';
     u.bar.classList.toggle('targeted', this.game.hero.target === u);
+    if (u.kind === 'wild' && u.lvShown !== this.state.lv) {
+      // 레벨 차이 색: 쉬움 초록 · 비슷 흰색 · 셈 주황 · 위험 빨강
+      u.lvShown = this.state.lv;
+      const d = u.lv - this.state.lv;
+      u.bar.dataset.diff = d <= -5 ? 'easy' : d < 3 ? 'even' : d < 7 ? 'hard' : 'danger';
+    }
   }
 
   // ---------- 효과 글자 ----------

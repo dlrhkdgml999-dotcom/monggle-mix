@@ -14,6 +14,8 @@ const V = new THREE.Vector3();
 const rand = (a, b) => a + Math.random() * (b - a);
 const dist2 = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
+const growth = lv => 1 + Math.min(0.25, (lv - 1) * 0.01); // 레벨이 오를수록 조금씩 커짐
+
 export function heroStats(lv, job = 'mage') {
   const J = JOBS[job] || JOBS.mage;
   return { maxHp: Math.round((100 + lv * 12) * J.hp), atk: (10 + lv * 2.2) * J.atk };
@@ -39,6 +41,8 @@ export class Game {
     this.lastZone = null;
     this.marker = this.makeMarker();
     this.arrow = this.makeArrow();
+    this.tring = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.78, 32), new THREE.MeshBasicMaterial({ color: 0xff5f7a, transparent: true, opacity: 0.85, depthWrite: false }));
+    this.tring.rotation.x = -Math.PI / 2; this.tring.visible = false; this.scene.add(this.tring);
     this.questT = 0;
     this.spawnHero();
     this.syncParty();
@@ -109,6 +113,9 @@ export class Game {
   makePet(m, slot) {
     const s = SPECIES[m.sp], st = petStats(m);
     const model = makeMonggle(m.sp, { shiny: m.shiny });
+    // 레벨이 오를수록 조금씩 커져요 (최대 +25%)
+    model.base0 = model.body.scale.x;
+    model.base = model.base0 * growth(m.lv);
     const h = this.hero.model.root.position;
     model.root.position.set(h.x + rand(-1, 1), 0, h.z + rand(-1, 1));
     return this.addUnit({
@@ -394,6 +401,21 @@ export class Game {
     if (u.kind === 'wild' && !u.dead) { sfx.tap(); this.hero.target = u; this.hero.moveTo = null; this.flashMarker(u.model.root.position, 0xff8080); return; }
     if (u.kind === 'friend') { this.befriend(u); }
   }
+  stickMove(dir) {
+    if (this.hero.dead) return;
+    this.hero.stick = dir;
+    if (dir) { this.hero.target = null; this.hero.moveTo = null; }
+  }
+  // ⚔️ 공격 버튼: 지금 대상이 있으면 계속, 없으면 가장 가까운 몬스터
+  attackNearest() {
+    const h = this.hero;
+    if (h.dead) return false;
+    let t = h.target && !h.target.dead && h.target.kind === 'wild' ? h.target : this.nearestEnemy(h, 11);
+    if (!t) { this.ui.toast('근처에 몬스터가 없어요'); return false; }
+    h.target = t; h.moveTo = null; h.stick = null;
+    sfx.tap();
+    return true;
+  }
   tapGround(p, drag) {
     if (this.hero.dead) return;
     this.hero.moveTo = clampToWorld(new THREE.Vector3(p.x, 0, p.z));
@@ -611,6 +633,7 @@ export class Game {
     if (up) {
       const st = petStats(m);
       u.maxHp = st.maxHp; u.atk = st.atk; u.hp = st.maxHp;
+      u.model.base = u.model.base0 * growth(m.lv);
       this.ui.floatText(u.model.root.position, `Lv ${m.lv}!`, 'lvup', 1.0);
       sfx.levelUp();
     }
@@ -847,6 +870,14 @@ export class Game {
       q.m.scale.setScalar(Math.max(0.01, q.t * 2.2));
       if (q.t <= 0) { this.scene.remove(q.m); this.parts.splice(i, 1); }
     }
+    // 공격 대상 고리
+    const tg = this.hero.target;
+    if (tg && !tg.dead && !tg.removed) {
+      this.tring.visible = true;
+      const r = (tg.radius || 0) + 1;
+      this.tring.position.set(tg.model.root.position.x, 0.05, tg.model.root.position.z);
+      this.tring.scale.setScalar(r * (1 + Math.sin(this.time * 6) * 0.06));
+    } else this.tring.visible = false;
     // 할 일 화살표
     this.questT -= dt;
     if (this.questT <= 0) { this.questT = 0.5; this.checkQuest(); }
@@ -896,7 +927,10 @@ export class Game {
       if (att) h.target = att;
     }
     if (h.target && (h.target.dead || h.target.removed || h.target.kind !== 'wild')) h.target = null;
-    if (h.target) {
+    if (h.stick) {
+      const p = h.model.root.position;
+      this.moveToward(h, p.x + h.stick.x * 3, p.z + h.stick.z * 3, dt, 0);
+    } else if (h.target) {
       const tp = h.target.model.root.position;
       if (this.moveToward(h, tp.x, tp.z, dt, h.range + (h.target.radius || 0)) && h.atkCd <= 0) { this.attack(h, h.target); h.atkCd = h.atkRate || 0.75; }
     } else if (h.moveTo) {
