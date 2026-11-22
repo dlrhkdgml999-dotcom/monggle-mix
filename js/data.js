@@ -5,10 +5,13 @@ export const ELEM = {
   fire:  { name: '불', color: '#ff7a59', icon: '🔥' },
   water: { name: '물', color: '#4fb3ff', icon: '💧' },
   grass: { name: '풀', color: '#5ccf6b', icon: '🌿' },
+  earth: { name: '땅', color: '#c8955a', icon: '🪨' },
+  wind:  { name: '바람', color: '#6fd6c6', icon: '🍃' },
 };
+export const ELEM_ORDER = ['fire', 'water', 'grass', 'earth', 'wind'];
 
-// 불 > 풀 > 물 > 불
-const BEATS = { fire: 'grass', grass: 'water', water: 'fire' };
+// 상성 (화살표 방향이 1.5배): 불 → 풀 → 땅 → 바람 → 물 → 불
+export const BEATS = { fire: 'grass', grass: 'earth', earth: 'wind', wind: 'water', water: 'fire' };
 
 export function elemMult(atkElems, defElems) {
   let best = 1;
@@ -92,6 +95,104 @@ export const SPECIES = {
               hp: 200, atk: 22, range: 6, speed: 4.2,
               skill: { name: '무지개 빛', type: 'aoe', power: 3.0, cd: 9, radius: 4 } },
 
+  // ---- 땅·바람 1단계 ----
+  moraedu:  { name: '모래두더지', stage: 1, elems: ['earth'], role: 'melee',
+              hp: 62, atk: 9, range: 1.5, speed: 3.4,
+              skill: { name: '땅굴 박치기', type: 'strike', power: 3.0, cd: 7 } },
+  jinheuk:  { name: '진흙개굴', stage: 1, elems: ['earth'], role: 'ranged',
+              hp: 52, atk: 8, range: 5.5, speed: 3.2,
+              skill: { name: '진흙 공', type: 'slow', power: 2.2, cd: 8, dur: 4 } },
+  bawikong: { name: '바위콩', stage: 1, elems: ['earth'], role: 'tank',
+              hp: 96, atk: 6, range: 1.5, speed: 2.6,
+              skill: { name: '단단 바위', type: 'guard', power: 0.5, cd: 12, dur: 5 } },
+  somteol:  { name: '솜털새', stage: 1, elems: ['wind'], role: 'ranged',
+              hp: 46, atk: 9, range: 5.5, speed: 4.0,
+              skill: { name: '깃털 화살', type: 'proj', power: 3.1, cd: 7 } },
+  mindle:   { name: '민들레솜', stage: 1, elems: ['wind'], role: 'healer',
+              hp: 52, atk: 5, range: 4.5, speed: 3.4,
+              skill: { name: '솜털 바람', type: 'heal', power: 0.3, cd: 10 } },
+  mungeyang:{ name: '뭉게양', stage: 1, elems: ['wind'], role: 'tank',
+              hp: 92, atk: 6, range: 1.5, speed: 2.8,
+              skill: { name: '폭신 구름막', type: 'shield', power: 0.5, cd: 13, dur: 5 } },
+
+  // ---- 2단계 (새 속성 짝) ----
+  gongbeol: { name: '데굴공벌레', stage: 2, elems: ['earth'], role: 'tank',
+              hp: 140, atk: 9, range: 1.6, speed: 3.0,
+              skill: { name: '데굴데굴 구르기', type: 'aoe', power: 2.0, cd: 10, radius: 3 } },
+  bueong:   { name: '바람부엉', stage: 2, elems: ['wind'], role: 'ranged',
+              hp: 76, atk: 13, range: 6, speed: 3.8,
+              skill: { name: '회오리 날개', type: 'aoe', power: 2.4, cd: 9, radius: 2.8 } },
+  magma:    { name: '용암도롱', stage: 2, elems: ['fire', 'earth'], role: 'melee',
+              hp: 92, atk: 14, range: 1.6, speed: 3.6,
+              skill: { name: '용암 꼬리', type: 'strike', power: 3.6, cd: 7 } },
+  bulsae:   { name: '아기불새', stage: 2, elems: ['fire', 'wind'], role: 'ranged',
+              hp: 74, atk: 13, range: 6, speed: 4.2,
+              skill: { name: '불꽃 깃털', type: 'proj', power: 3.4, cd: 7 } },
+  hama:     { name: '진흙하마', stage: 2, elems: ['water', 'earth'], role: 'tank',
+              hp: 150, atk: 8, range: 1.6, speed: 2.6,
+              skill: { name: '진흙 목욕', type: 'shield', power: 0.5, cd: 14, dur: 6 } },
+  dolgorae: { name: '물보라돌고래', stage: 2, elems: ['water', 'wind'], role: 'ranged',
+              hp: 78, atk: 12, range: 6, speed: 4.0,
+              skill: { name: '물보라 바람', type: 'slow', power: 2.6, cd: 9, dur: 5, radius: 3 } },
+  metdwaeji:{ name: '도토리멧돼지', stage: 2, elems: ['grass', 'earth'], role: 'melee',
+              hp: 100, atk: 14, range: 1.6, speed: 3.8,
+              skill: { name: '돌진', type: 'strike', power: 3.8, cd: 8 } },
+  kkotnabi: { name: '꽃나비', stage: 2, elems: ['grass', 'wind'], role: 'healer',
+              hp: 84, atk: 10, range: 4.5, speed: 4.0,
+              skill: { name: '꽃가루 바람', type: 'heal', power: 0.42, cd: 11 } },
+  nakta:    { name: '모래바람낙타', stage: 2, elems: ['earth', 'wind'], role: 'aoe',
+              hp: 110, atk: 12, range: 1.8, speed: 3.4,
+              skill: { name: '모래 폭풍', type: 'slow', power: 2.4, cd: 9, dur: 4, radius: 3.2 } },
+  // 숨은 조합
+  byeolnyang:{ name: '별빛고양이', stage: 2, secret: true, elems: ['fire', 'wind'], role: 'ranged',
+              hp: 82, atk: 15, range: 6, speed: 4.2,
+              skill: { name: '별가루 펀치', type: 'aoe', power: 2.6, cd: 8, radius: 3 } },
+  daltokki: { name: '달토끼', stage: 2, secret: true, elems: ['water', 'wind'], role: 'healer',
+              hp: 92, atk: 11, range: 4.5, speed: 4.2,
+              skill: { name: '달빛 떡', type: 'heal', power: 0.48, cd: 11 } },
+
+  // ---- 3단계 (새) ----
+  golem:    { name: '바위골렘', stage: 3, elems: ['earth'], role: 'tank',
+              hp: 260, atk: 14, range: 1.9, speed: 2.8,
+              skill: { name: '땅 울림', type: 'aoe', power: 2.8, cd: 10, radius: 3.6 } },
+  pokpung:  { name: '폭풍독수리', stage: 3, elems: ['wind'], role: 'ranged',
+              hp: 170, atk: 22, range: 6.5, speed: 4.4,
+              skill: { name: '폭풍 다이브', type: 'strike', power: 4.2, cd: 8 } },
+  girin:    { name: '번개기린', stage: 3, elems: ['wind', 'fire'], role: 'aoe',
+              hp: 190, atk: 21, range: 2, speed: 4.0,
+              skill: { name: '번개 쾅', type: 'aoe', power: 3.2, cd: 9, radius: 3.4 } },
+  namu:     { name: '할아버지나무', stage: 3, elems: ['grass', 'earth'], role: 'healer',
+              hp: 250, atk: 13, range: 4.5, speed: 2.8,
+              skill: { name: '나무 그늘', type: 'heal', power: 0.6, cd: 12 } },
+  yongam:   { name: '용암거북', stage: 3, elems: ['earth', 'fire'], role: 'tank',
+              hp: 270, atk: 15, range: 1.9, speed: 2.6,
+              skill: { name: '화산 등껍질', type: 'shield', power: 0.55, cd: 14, dur: 7 } },
+  kkulgom:  { name: '꿀곰', stage: 3, secret: true, elems: ['grass', 'wind'], role: 'healer',
+              hp: 240, atk: 17, range: 1.9, speed: 3.4,
+              skill: { name: '꿀단지 파티', type: 'love', power: 0.45, buff: 5, cd: 12 } },
+
+  // ---- 4단계 전설 (3단계끼리, Lv22) ----
+  phoenix:  { name: '불사조', stage: 4, elems: ['fire'], role: 'aoe',
+              hp: 320, atk: 34, range: 6, speed: 4.6,
+              skill: { name: '불사의 날개', type: 'aoe', power: 3.8, cd: 9, radius: 4.2 } },
+  mulyong:  { name: '물빛용', stage: 4, elems: ['water'], role: 'ranged',
+              hp: 340, atk: 31, range: 6.5, speed: 4.2,
+              skill: { name: '물빛 숨결', type: 'slow', power: 3.4, cd: 9, dur: 5, radius: 4 } },
+  kkotjeong:{ name: '꽃의 정령', stage: 4, elems: ['grass'], role: 'healer',
+              hp: 330, atk: 26, range: 5, speed: 4.2,
+              skill: { name: '봄날의 노래', type: 'love', power: 0.6, buff: 6, dmg: 2.6, radius: 4, cd: 11 } },
+  daeji:    { name: '대지거북', stage: 4, elems: ['earth'], role: 'tank',
+              hp: 460, atk: 24, range: 2, speed: 2.8,
+              skill: { name: '산을 짊어진 등', type: 'shield', power: 0.65, cd: 13, dur: 8 } },
+  cheondung:{ name: '천둥새', stage: 4, elems: ['wind'], role: 'aoe',
+              hp: 310, atk: 35, range: 6, speed: 4.8,
+              skill: { name: '천둥 번개', type: 'aoe', power: 4.0, cd: 9, radius: 4.2 } },
+
+  // ---- 5단계 (전설끼리, Lv28) ----
+  dragon:   { name: '무지개드래곤', stage: 5, elems: ['fire', 'water', 'grass', 'earth', 'wind'], role: 'aoe',
+              hp: 480, atk: 46, range: 6, speed: 4.8,
+              skill: { name: '무지개 브레스', type: 'aoe', power: 4.4, cd: 9, radius: 4.8 } },
+
   // 💞 둘이 섞기로만 태어나는 커플 몽글이 (couple: true)
   // love: 파티 체력 회복 + 공격력 응원(buff초), dmg가 있으면 대상 주변 범위 공격도
   heartmong: { name: '하트몽글', stage: 2, couple: true, elems: ['fire', 'water', 'grass'], role: 'healer',
@@ -103,44 +204,78 @@ export const SPECIES = {
 };
 
 export const DEX_ORDER = ['bulssi', 'hotteok', 'mulbang', 'jogae', 'saessak', 'ggulbeol',
-  'banjjak', 'iseul', 'dotori',
+  'banjjak', 'iseul', 'dotori', 'moraedu', 'jinheuk', 'bawikong', 'somteol', 'mindle', 'mungeyang',
   'bulkkot', 'pado', 'supgom', 'gimmung', 'hwabun', 'ikki',
-  'haenim', 'gorae', 'saseum', 'unicorn',
+  'gongbeol', 'bueong', 'magma', 'bulsae', 'hama', 'dolgorae', 'metdwaeji', 'kkotnabi', 'nakta', 'byeolnyang', 'daltokki',
+  'haenim', 'gorae', 'saseum', 'unicorn', 'golem', 'pokpung', 'girin', 'namu', 'yongam', 'kkulgom',
+  'phoenix', 'mulyong', 'kkotjeong', 'daeji', 'cheondung',
+  'dragon',
   'heartmong', 'heartangel'];
 
-// 조합: 정확한 짝 먼저, 없으면 속성 짝으로
-const EXACT = {
+// 조합 규칙 (믹스마스터처럼 단계가 이어지는 나무)
+// 1) 같은 종 → 같은 종 (반짝이 확률 업)
+// 2) 정해진 짝(EXACT, 숨은 조합 포함)
+// 3) 그 밖에는 '낮은 쪽 단계 + 1' 단계에서 두 몽글이의 대표 속성(elems[0]) 짝으로 정한다
+export const EXACT = {
   'bulssi+hotteok': 'bulkkot',
   'jogae+mulbang': 'pado',
   'ggulbeol+saessak': 'supgom',
-  // 3단계
+  // 3단계 (예전 조합 그대로)
   'bulkkot+hwabun': 'haenim', 'bulkkot+gimmung': 'haenim',
   'gimmung+pado': 'gorae', 'ikki+pado': 'gorae',
   'hwabun+supgom': 'saseum', 'ikki+supgom': 'saseum',
   'bulkkot+pado': 'unicorn', 'bulkkot+supgom': 'unicorn', 'pado+supgom': 'unicorn',
+  // 숨은 조합
+  'banjjak+hotteok': 'byeolnyang',
+  'iseul+mulbang': 'daltokki',
+  'kkotnabi+supgom': 'kkulgom',
 };
-const BY_ELEM = {
-  'fire+water': 'gimmung',
-  'fire+grass': 'hwabun',
-  'grass+water': 'ikki',
+const pairKey = (a, b) => [a, b].sort().join('+');
+// 단계별 속성 짝 표 (키는 속성 이름을 가나다 아닌 영문 정렬)
+const TIER = {
+  2: { 'fire+fire': 'bulkkot', 'water+water': 'pado', 'grass+grass': 'supgom', 'earth+earth': 'gongbeol', 'wind+wind': 'bueong',
+       'fire+water': 'gimmung', 'fire+grass': 'hwabun', 'grass+water': 'ikki', 'earth+fire': 'magma', 'fire+wind': 'bulsae',
+       'earth+water': 'hama', 'water+wind': 'dolgorae', 'earth+grass': 'metdwaeji', 'grass+wind': 'kkotnabi', 'earth+wind': 'nakta' },
+  3: { 'fire+fire': 'haenim', 'water+water': 'gorae', 'grass+grass': 'saseum', 'earth+earth': 'golem', 'wind+wind': 'pokpung',
+       'fire+water': 'unicorn', 'fire+grass': 'unicorn', 'grass+water': 'unicorn', 'fire+wind': 'girin', 'water+wind': 'girin',
+       'earth+grass': 'namu', 'grass+wind': 'namu', 'earth+fire': 'yongam', 'earth+water': 'yongam', 'earth+wind': 'golem' },
+  4: { 'fire+fire': 'phoenix', 'water+water': 'mulyong', 'grass+grass': 'kkotjeong', 'earth+earth': 'daeji', 'wind+wind': 'cheondung',
+       'fire+grass': 'phoenix', 'earth+grass': 'kkotjeong', 'earth+wind': 'daeji', 'water+wind': 'cheondung', 'fire+water': 'mulyong',
+       'earth+fire': 'phoenix', 'fire+wind': 'cheondung', 'grass+water': 'mulyong', 'earth+water': 'daeji', 'grass+wind': 'kkotjeong' },
 };
 
 export function mixResult(spA, spB) {
-  if (spA === spB) return spA; // 같은 종 → 같은 종 (반짝이 확률 업)
-  const key = [spA, spB].sort().join('+');
-  if (EXACT[key]) return EXACT[key];
   const a = SPECIES[spA], b = SPECIES[spB];
-  if (a.stage === 1 && b.stage === 1) {
-    const ek = [a.elems[0], b.elems[0]].sort().join('+');
-    if (BY_ELEM[ek]) return BY_ELEM[ek];
-  }
-  return null; // 아직 없는 조합 (3단계는 업데이트로 추가)
+  if (!a || !b || a.couple || b.couple) return null; // 하트는 💞 둘이 섞기에서만
+  if (spA === spB) return spA; // 같은 종 → 같은 종 (반짝이 확률 업)
+  const key = pairKey(spA, spB);
+  if (EXACT[key]) return EXACT[key];
+  const st = Math.min(a.stage, b.stage) + 1;
+  if (st >= 5) return 'dragon';
+  return TIER[st]?.[pairKey(a.elems[0], b.elems[0])] || null;
+}
+
+// 결과 단계별 재료 최소 레벨
+const LV_REQ = { 1: 10, 2: 10, 3: 15, 4: 22, 5: 28 };
+export const MIX_MIN_LV = 10;    // 재료 최소 레벨
+export const MIX_MIN_LV3 = 15;   // 3단계 재료 최소 레벨
+export function mixMinLv(spA, spB) {
+  const r = mixResult(spA, spB);
+  return LV_REQ[r ? SPECIES[r].stage : 2];
+}
+
+// 도감에서 보여 줄 '이렇게 태어나요'
+export function recipesFor(sp) {
+  const S = SPECIES[sp]; if (!S) return [];
+  const out = [];
+  for (const [k, v] of Object.entries(EXACT)) if (v === sp) out.push({ exact: k.split('+'), secret: !!S.secret });
+  if (S.stage === 5) out.push({ text: '4단계 전설 두 마리 (서로 다른 전설)' });
+  const t = TIER[S.stage];
+  if (t) for (const [k, v] of Object.entries(t)) if (v === sp) out.push({ elems: k.split('+'), stage: S.stage - 1 });
+  return out;
 }
 
 export const MIX_COST = 10;      // 반짝가루
-export const MIX_MIN_LV = 10;    // 재료 최소 레벨
-export const MIX_MIN_LV3 = 15;   // 3단계 재료 최소 레벨
-export function mixMinLv(spA, spB) { return Math.max(SPECIES[spA].stage, SPECIES[spB].stage) >= 2 ? MIX_MIN_LV3 : MIX_MIN_LV; }
 // 💞 둘이 섞기: 광희·하은이 한 마리씩 넣으면 둘 다 같은 아기를 하나씩 받는다.
 // 1단계끼리 → 하트몽글, 2단계 이상이 하나라도 있으면 → 하트천사
 export function coupleResult(spA, spB) {
@@ -153,7 +288,14 @@ export const INH_POWER = 0.8;
 export const INH_CD = 1.4;
 
 export const BOX_MAX = 20;       // 보관함 칸
-export const MAX_LV = 30;
+export const CORE_MAX = 60;      // 💎 코어 보관함 칸
+export const CORE_RATE = 0.05;   // 몬스터가 코어를 떨어뜨릴 확률
+export const BOSS_CORES = ['bulkkot', 'pado', 'supgom', 'gongbeol', 'bueong']; // 보스는 2단계 코어를 꼭 줘요
+export const coreDust = c => 2 + SPECIES[c.sp].stage * 3; // 코어를 반짝가루로 바꾸면
+export const MAX_LV = 40;       // 주인공 최대 레벨
+export const PET_MAX_LV = 50;   // 몽글이 최대 레벨
+export const STAT_PER_LV = 3;   // 주인공 레벨업마다 능력치 점수
+
 
 export function expToNext(lv) { return Math.round(14 + lv * lv * 2.2); }
 
@@ -161,11 +303,11 @@ export function expToNext(lv) { return Math.round(14 + lv * lv * 2.2); }
 export const ZONES = [
   { id: 'village', name: '솥단지 마을', x: 0, z: 0, r: 13, safe: true },
   { id: 'field', name: '말랑 들판', x: 34, z: 6, r: 20, lv: [1, 8],
-    spawns: ['bulssi', 'hotteok', 'saessak', 'ggulbeol'], count: 11 },
+    spawns: ['bulssi', 'hotteok', 'saessak', 'ggulbeol', 'moraedu', 'somteol'], count: 12 },
   { id: 'lake', name: '물방울 호숫가', x: 4, z: -38, r: 20, lv: [6, 15],
-    spawns: ['mulbang', 'jogae', 'saessak'], count: 10 },
+    spawns: ['mulbang', 'jogae', 'saessak', 'jinheuk', 'mindle', 'bawikong'], count: 12 },
   { id: 'moon', name: '달빛 버섯숲', x: -46, z: -16, r: 20, lv: [14, 24],
-    spawns: ['banjjak', 'banjjak', 'iseul', 'iseul', 'dotori', 'dotori', 'bulkkot', 'pado', 'supgom'], count: 12 },
+    spawns: ['banjjak', 'banjjak', 'iseul', 'iseul', 'dotori', 'dotori', 'mungeyang', 'mungeyang', 'bulkkot', 'pado', 'supgom', 'gongbeol', 'bueong'], count: 14 },
 ];
 
 export const CAPTURE_RATE = 0.10;      // 기획서 기본 확률
@@ -181,9 +323,12 @@ export const QUESTS = [
   { text: '물방울 호숫가에서 물 몽글이 만나기', to: { x: 6, z: -32 }, done: s => s.dex.mulbang || s.dex.jogae },
   { text: '대왕버섯 물리치기 (들판 동쪽 끝)', to: 'boss', done: s => (s.bossKills || 0) >= 1 },
   { text: '서쪽 달빛 버섯숲 가 보기 (Lv14 이상 추천)', to: { x: -30, z: -12 }, done: (s, g) => g.lastZone?.id === 'moon' },
-  { text: '2단계 몽글이 둘을 섞어 3단계 만들기 (Lv15 둘)', done: s => ['haenim', 'gorae', 'saseum', 'unicorn'].some(k => s.dex[k]) },
+  { text: '2단계 몽글이 둘을 섞어 3단계 만들기 (Lv15 둘)', done: s => Object.keys(s.dex).some(k => SPECIES[k]?.stage === 3 && !SPECIES[k].couple) },
+  { text: '몬스터를 쓰러뜨려 💎 코어 얻기', done: s => (s.coresGot || 0) >= 1 },
   { text: '무지개유니콘 만나기', done: s => !!s.dex.unicorn },
+  { text: '3단계 둘을 섞어 4단계 전설 만나기 (Lv22 둘)', done: s => Object.keys(s.dex).some(k => SPECIES[k]?.stage === 4) },
   { text: '믹스 솥 💞 둘이 섞기로 하트몽글 만나기', to: { x: 0, z: 1 }, done: s => !!(s.dex.heartmong || s.dex.heartangel) },
+  { text: '전설 둘을 섞어 무지개드래곤 만나기 (Lv28 둘)', done: s => !!s.dex.dragon },
   { text: '도감 모두 채우기', count: s => [Object.keys(s.dex).length, DEX_ORDER.length], done: s => Object.keys(s.dex).length >= DEX_ORDER.length },
 ];
 export const QUEST_REWARD = 10;

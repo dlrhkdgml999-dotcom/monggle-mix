@@ -1,6 +1,6 @@
 // 몽글믹스 — 게임 핵심 (주인공·몽글이·야생 몽글이·전투·포획)
 import * as THREE from '../lib/three.min.js';
-import { SPECIES, INH_POWER, INH_CD, ZONES, elemMult, expToNext, MAX_LV, BOX_MAX, CAPTURE_RATE, CAPTURE_RATE_NEW, QUESTS, QUEST_REWARD, JOBS, rollEquip, equipBonus, INV_MAX, TIERS } from './data.js';
+import { SPECIES, INH_POWER, INH_CD, ZONES, elemMult, expToNext, MAX_LV, PET_MAX_LV, STAT_PER_LV, CORE_MAX, CORE_RATE, BOSS_CORES, BOX_MAX, CAPTURE_RATE, CAPTURE_RATE_NEW, QUESTS, QUEST_REWARD, JOBS, rollEquip, equipBonus, INV_MAX, TIERS } from './data.js';
 import { makeMonggle, makeHero, toon } from './models.js';
 import { clampToWorld, SPAWN, CAULDRON } from './world.js';
 import { sfx } from './sfx.js';
@@ -106,7 +106,7 @@ export class Game {
     const model = makeHero(this.state.look, job);
     model.root.position.set(SPAWN.x, 0, SPAWN.z);
     this.hero = this.addUnit({
-      kind: 'hero', name: this.state.name, model, elems: [], range: J.range, speed: 5, job, atkRate: J.cd,
+      kind: 'hero', name: this.state.name, model, elems: [], range: J.range, speed: 5, job, atkRate: st.rate, crit: st.crit,
       hp: st.maxHp, maxHp: st.maxHp, atk: st.atk, atkCd: 0, target: null, moveTo: null,
       buffs: {}, dead: false, face: 0,
     });
@@ -123,18 +123,26 @@ export class Game {
     return this.addUnit({
       kind: 'pet', data: m, sp: m.sp, name: s.name, model, elems: s.elems, role: s.role,
       range: s.range, speed: s.speed + 1, hp: st.maxHp, maxHp: st.maxHp, atk: st.atk,
-      atkCd: rand(0, 1), skillCd: 0, skill2Cd: 4, target: null, slot, buffs: {}, dead: false, reviveT: 0, face: 0,
+      atkCd: rand(0, 1), skillCd: 0, skill2Cd: 4, skill3Cd: 7, target: null, slot, buffs: {}, dead: false, reviveT: 0, face: 0,
     });
   }
 
+  // 장비 + 능력치 분배(힘·체력·민첩)까지 더한 주인공 능력치
   heroFullStats() {
-    const st = heroStats(this.state.lv, this.state.job || 'mage'), b = equipBonus(this.state);
-    return { maxHp: st.maxHp + b.hp, atk: st.atk + b.atk };
+    const s = this.state, J = JOBS[s.job] || JOBS.mage;
+    const st = heroStats(s.lv, s.job || 'mage'), b = equipBonus(s), p = s.stats || {};
+    const agi = p.agi || 0;
+    return {
+      maxHp: Math.round(st.maxHp + b.hp + (p.vit || 0) * 10),
+      atk: st.atk + b.atk + (p.str || 0) * 1.2,
+      rate: J.cd * (1 - Math.min(0.35, agi * 0.008)),
+      crit: (J.crit || 0) + Math.min(0.3, agi * 0.004),
+    };
   }
-  // 장비를 바꾸거나 강화하면 능력치 다시 계산
+  // 장비를 바꾸거나 강화하거나 능력치를 나누면 다시 계산
   refreshHero() {
     const h = this.hero, st = this.heroFullStats(), ratio = h.hp / h.maxHp;
-    h.maxHp = st.maxHp; h.atk = st.atk; h.hp = Math.max(1, Math.round(st.maxHp * ratio));
+    h.maxHp = st.maxHp; h.atk = st.atk; h.atkRate = st.rate; h.crit = st.crit; h.hp = Math.max(1, Math.round(st.maxHp * ratio));
   }
 
   // 장비 드롭
@@ -376,11 +384,13 @@ export class Game {
       this.ui.floatText(u.model.root.position, '✦40', 'lvup', 1.4);
       this.ui.toast('🎉 둘이서 대왕버섯을 물리쳤어요! 반짝가루 40개');
       this.dropEquip(u);
+      this.giveCore(BOSS_CORES[Math.floor(Math.random() * BOSS_CORES.length)], 12, u.model.root.position);
       sfx.levelUp(); this.burst(u.model.root.position, 0xfff27a, 24);
       u.fadeT = 1; this.ui.renderTop(); this.ui.save();
       return;
     }
     this.reward(u);
+    if (!u.minion) this.rollCore(u);
     const rate = (!this.state.dex[u.sp] ? CAPTURE_RATE_NEW : CAPTURE_RATE) * (this.candyT > 0 ? 2 : 1);
     if (!u.minion && Math.random() < rate) {
       // 나만의 친구로 바꾸기 (host 화면과 상관없이)
@@ -584,14 +594,15 @@ export class Game {
     u.atkT = ATTACK_TIME;
     if (u.kind === 'hero') {
       const J = JOBS[u.job] || JOBS.mage;
-      if (J.proj === 'arrow') { this.shoot(u, t, 1, 0xffffff, false, 'arrow'); return; }
-      if (J.proj === 'star') { this.shoot(u, t, 1, 0xfff27a, false, 'star'); return; }
-      if (J.proj === 'bullet') { this.shoot(u, t, 1, 0x3a3a4a, false, 'bullet'); return; }
-      if (J.crit && Math.random() < J.crit) { this.damage(u, t, 2); this.ui.floatText(t.model.root.position, '치명타!', 'big', 0.6); return; }
-      this.damage(u, t); return;
+      const crit = Math.random() < (u.crit || 0), pw = crit ? 2 : 1;
+      if (crit) this.ui.floatText(t.model.root.position, '치명타!', 'big', 0.6);
+      if (J.proj === 'arrow') { this.shoot(u, t, pw, 0xffffff, false, 'arrow'); return; }
+      if (J.proj === 'star') { this.shoot(u, t, pw, 0xfff27a, false, 'star'); return; }
+      if (J.proj === 'bullet') { this.shoot(u, t, pw, 0x3a3a4a, false, 'bullet'); return; }
+      this.damage(u, t, pw); return;
     }
     if (u.range > 3) {
-      const col = u.elems[0] === 'fire' ? 0xff9a4d : u.elems[0] === 'water' ? 0x6cc4ff : 0xa6e36a;
+      const col = { fire: 0xff9a4d, water: 0x6cc4ff, grass: 0xa6e36a, earth: 0xd8a56a, wind: 0x9be3d8 }[u.elems[0]] || 0xffe066;
       this.shoot(u, t, 1, col);
     } else this.damage(u, t);
   }
@@ -608,6 +619,7 @@ export class Game {
       this.ui.floatText(u.model.root.position, '✦40', 'lvup', 1.4);
       this.ui.toast('🎉 대왕버섯을 물리쳤어요! 반짝가루 40개');
       this.dropEquip(u);
+      this.giveCore(BOSS_CORES[Math.floor(Math.random() * BOSS_CORES.length)], 12, u.model.root.position);
       sfx.levelUp(); this.burst(u.model.root.position, 0xfff27a, 24);
       u.fadeT = 1; this.bossT = 600;
       for (const o of this.units) if (o.target === u) o.target = null;
@@ -619,6 +631,7 @@ export class Game {
       this.reward(u);
       const isNew = !this.state.dex[u.sp];
       const rate = (isNew ? CAPTURE_RATE_NEW : CAPTURE_RATE) * (this.candyT > 0 ? 2 : 1);
+      if (!u.minion) this.rollCore(u);
       if (Math.random() < rate) this.makeFriend(u);
       else if (u.minion || u.mirror) { u.fadeT = 1; if (!u.mirror) setTimeout(() => this.removeUnit(u), 1200); }
       else { u.fadeT = 1; setTimeout(() => this.respawn(u), 9000); }
@@ -671,8 +684,9 @@ export class Game {
     s.exp += n;
     while (s.lv < MAX_LV && s.exp >= expToNext(s.lv)) {
       s.exp -= expToNext(s.lv); s.lv++;
-      const st = this.heroFullStats();
-      this.hero.maxHp = st.maxHp; this.hero.atk = st.atk; this.hero.hp = st.maxHp;
+      s.statPts = (s.statPts || 0) + STAT_PER_LV;
+      this.refreshHero(); this.hero.hp = this.hero.maxHp;
+      this.ui.renderTop();
       this.ui.floatText(this.hero.model.root.position, `Lv ${s.lv}!`, 'lvup', 1.2);
       sfx.levelUp(); this.burst(this.hero.model.root.position, 0xfff27a, 14);
       if (s.lv === 15) { this.ui.toast('🎉 Lv15! 몽글이 칸이 하나 더 열렸어요'); this.ui.openBox(); }
@@ -681,10 +695,10 @@ export class Game {
 
   gainPetExp(u, n) {
     const m = u.data;
-    if (m.lv >= MAX_LV) return;
+    if (m.lv >= PET_MAX_LV) return;
     m.exp += n;
     let up = false;
-    while (m.lv < MAX_LV && m.exp >= expToNext(m.lv)) { m.exp -= expToNext(m.lv); m.lv++; up = true; }
+    while (m.lv < PET_MAX_LV && m.exp >= expToNext(m.lv)) { m.exp -= expToNext(m.lv); m.lv++; up = true; }
     if (up) {
       const st = petStats(m);
       u.maxHp = st.maxHp; u.atk = st.atk; u.hp = st.maxHp;
@@ -692,6 +706,23 @@ export class Game {
       this.ui.floatText(u.model.root.position, `Lv ${m.lv}!`, 'lvup', 1.0);
       sfx.levelUp();
     }
+  }
+
+  // ---------- 💎 코어 ----------
+  // 쓰러뜨린 몬스터가 가끔 코어를 떨어뜨린다. 코어는 가방 칸을 안 차지하고, 솥에 바로 넣어 섞을 수 있다.
+  rollCore(u) {
+    if (Math.random() < CORE_RATE * (this.candyT > 0 ? 2 : 1)) this.giveCore(u.sp, u.lv, u.model.root.position);
+  }
+  giveCore(sp, lv, pos) {
+    const s = this.state; s.cores = s.cores || [];
+    if (s.cores.length >= CORE_MAX) { this.ui.toast(`💎 코어 보관함이 꽉 찼어요 (${CORE_MAX}개)`); return; }
+    s.cores.push({ id: s.nextId++, sp, lv, shiny: false });
+    const first = !s.coresGot;
+    s.coresGot = (s.coresGot || 0) + 1;
+    this.ui.floatText(pos, `💎 ${SPECIES[sp].name} 코어!`, 'friend', 1.1);
+    this.burst(pos, 0x9ffcff, 12); sfx.dust();
+    if (first) this.ui.toast('💎 첫 코어! 가방 → 코어에서 깨우거나, 믹스 솥에 바로 넣어 섞을 수 있어요');
+    this.ui.save();
   }
 
   // ---------- 포획 ----------
@@ -727,24 +758,28 @@ export class Game {
 
   refreshVivid() {
     const n = Object.keys(this.state.dex).length;
-    this.world.setVivid(Math.min(1, n / 12)); // 1·2단계 12종을 다 모으면 가장 선명
+    this.world.setVivid(Math.min(1, n / 24)); // 24종쯤 모으면 가장 선명
   }
 
   // ---------- 스킬 ----------
   // 물려받은 기술 (원래 기술보다 조금 약하고 느리게)
-  inhSkill(u) {
-    const sp = u.data?.inh && SPECIES[u.data.inh];
+  inhSkill(u, i = 0) {
+    const k0 = i ? u.data?.inh2 : u.data?.inh;
+    const sp = k0 && SPECIES[k0];
     if (!sp) return null;
     const k = sp.skill;
     return { ...k, power: k.power * INH_POWER, dmg: k.dmg && k.dmg * INH_POWER, cd: Math.round(k.cd * INH_CD) };
   }
 
+  // inherited: false(제 기술) / 1(물려받은 첫째) / 2(물려받은 둘째)
   useSkill(slot, inherited = false, quiet = false) {
     const u = this.units.find(x => x.kind === 'pet' && x.slot === slot);
     if (!u || u.dead) return false;
-    const sk = inherited ? this.inhSkill(u) : SPECIES[u.sp].skill;
+    const which = inherited === true ? 1 : inherited || 0;
+    const sk = which ? this.inhSkill(u, which - 1) : SPECIES[u.sp].skill;
     if (!sk) return false;
-    if ((inherited ? u.skill2Cd : u.skillCd) > 0) return false;
+    const cdKey = ['skillCd', 'skill2Cd', 'skill3Cd'][which];
+    if (u[cdKey] > 0) return false;
     const party = this.units.filter(x => (x.kind === 'pet' || x.kind === 'hero') && !x.dead);
     if (sk.type === 'love') {
       // 💞 파티 회복 + 응원, 하트천사는 대상 주변 범위 공격도
@@ -785,7 +820,7 @@ export class Game {
         this.ui.ring(c, sk.type === 'slow' ? '#e9f2ff' : '#ffb36b', sk.radius || 3);
       } else if (sk.type === 'slow') { t.buffs.slow = sk.dur; this.shoot(u, t, sk.power, 0xffe066); }
     }
-    if (inherited) u.skill2Cd = sk.cd; else u.skillCd = sk.cd;
+    u[cdKey] = sk.cd;
     u.atkT = ATTACK_TIME;
     if (sk.type === 'heal' || sk.type === 'love') sfx.heal(); else sfx.skill();
     this.ui.floatText(u.model.root.position, inherited ? '🧬 ' + sk.name : sk.name, 'skill', 0.9);
@@ -1029,7 +1064,7 @@ export class Game {
     }
     if (zone && zone.safe) u.hp = Math.min(u.maxHp, u.hp + u.maxHp * 0.12 * dt);
     else u.hp = Math.min(u.maxHp, u.hp + u.maxHp * 0.01 * dt);
-    u.atkCd -= dt; if (u.skillCd > 0) u.skillCd -= dt; if (u.skill2Cd > 0) u.skill2Cd -= dt;
+    u.atkCd -= dt; if (u.skillCd > 0) u.skillCd -= dt; if (u.skill2Cd > 0) u.skill2Cd -= dt; if (u.skill3Cd > 0) u.skill3Cd -= dt;
     const wantSkill = sk => {
       const fight = (u.target && !u.target.dead) || (this.hero.target && !this.hero.target.dead && this.hero.target.kind === 'wild');
       if (sk.type === 'heal') return this.units.some(o => (o.kind === 'hero' || o.kind === 'pet') && !o.dead && o.hp < o.maxHp * 0.6);
@@ -1038,8 +1073,11 @@ export class Game {
     };
     if (this.state.auto && u.skillCd <= 0 && wantSkill(SPECIES[u.sp].skill)) this.useSkill(u.slot, false, true);
     // 물려받은 기술은 자동 사냥이 아니어도 몽글이가 알아서 써요 (싸우는 중일 때)
-    const inh = u.skill2Cd <= 0 && this.inhSkill(u);
-    if (inh && wantSkill(inh)) { if (!this.useSkill(u.slot, true, true)) u.skill2Cd = 1.5; }
+    for (const i of [1, 2]) {
+      const key = i === 1 ? 'skill2Cd' : 'skill3Cd';
+      const inh = u[key] <= 0 && this.inhSkill(u, i - 1);
+      if (inh && wantSkill(inh)) { if (!this.useSkill(u.slot, i, true)) u[key] = 1.5; }
+    }
     const dHero = dist2(u.model.root.position, hp);
     // 주인공이 멀어지면 무조건 따라감
     if (dHero > 14) u.target = null;

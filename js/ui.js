@@ -1,7 +1,9 @@
 // 몽글믹스 — 화면 UI (상단 정보, 스킬 버튼, 가방, 도감, 믹스 솥)
 import * as THREE from '../lib/three.min.js';
-import { SPECIES, ELEM, DEX_ORDER, mixResult, mixMinLv, coupleResult, COUPLE_SHINY, MIX_COST, MIX_MIN_LV, BOX_MAX, expToNext, MAX_LV, QUESTS, JOBS, SHOP, EQUIP, TIERS, ENHANCE_RATE, enhanceCost, itemStat, INV_MAX } from './data.js';
+import { SPECIES, ELEM, ELEM_ORDER, BEATS, PET_MAX_LV, CORE_MAX, coreDust, recipesFor, DEX_ORDER, mixResult, mixMinLv, coupleResult, COUPLE_SHINY, MIX_COST, MIX_MIN_LV, BOX_MAX, expToNext, MAX_LV, QUESTS, JOBS, SHOP, EQUIP, TIERS, ENHANCE_RATE, enhanceCost, itemStat, INV_MAX } from './data.js';
 import { BOUNDS } from './world.js';
+import { ZONES } from './data.js';
+const ZONES_LIST = () => ZONES;
 import { makeMonggle, makeHero } from './models.js';
 import { sfx, isMuted, setMuted } from './sfx.js';
 import { newSave } from './save.js';
@@ -69,7 +71,7 @@ export class UI {
     const hud = $('#hud');
     hud.innerHTML = `
       <div id="me" class="card">
-        <div class="row"><b id="meName"></b><span id="meLv" class="lv"></span></div>
+        <div class="row"><b id="meName"></b><span id="meLv" class="lv"></span><button id="statPts" class="hidden">⭐<b></b></button></div>
         <div class="bar hp"><i id="meHp"></i></div>
         <div class="bar xp"><i id="meXp"></i></div>
       </div>
@@ -102,6 +104,7 @@ export class UI {
       <div id="panel" class="hidden"><div class="sheet"><button class="x">✕</button><div class="body"></div></div></div>
     `;
     $('#bagBtn').onclick = () => this.openBox();
+    $('#statPts').onclick = e => { e.stopPropagation(); this.openStats(); };
     $('#dexBtn').onclick = () => this.openDex();
     $('#mixBtn').onclick = () => this.openMix();
     $('#micBtn').onclick = async () => {
@@ -154,6 +157,7 @@ export class UI {
     $('#meName').textContent = s.name;
     $('#meLv').textContent = `${(JOBS[s.job] || JOBS.mage).icon} Lv ${s.lv}`;
     $('#dust b').textContent = s.dust;
+    const sp = $('#statPts'); sp.classList.toggle('hidden', !s.statPts); if (s.statPts) sp.querySelector('b').textContent = s.statPts;
     if (g) {
       $('#meHp').style.width = (g.hero.hp / g.hero.maxHp * 100) + '%';
       $('#meXp').style.width = (s.lv >= MAX_LV ? 100 : s.exp / expToNext(s.lv) * 100) + '%';
@@ -199,7 +203,7 @@ export class UI {
       const u = this.game.units.find(x => x.kind === 'pet' && x.slot === i);
       if (!u) continue;
       const sk = SPECIES[u.sp].skill;
-      const inh = u.data.inh && SPECIES[u.data.inh] ? `<span class="inh" title="물려받은 기술: ${SPECIES[u.data.inh].skill.name}"><img src="${icon(u.data.inh)}"></span>` : '';
+      const inh = [u.data.inh, u.data.inh2].map((k, j) => k && SPECIES[k] ? `<span class="inh i${j}" title="물려받은 기술: ${SPECIES[k].skill.name}"><img src="${icon(k)}"></span>` : '').join('');
       const b = h('button', 'skill', `<img src="${icon(u.sp, u.data.shiny)}"><small>${sk.name}</small><i class="cd"></i>${inh}`);
       b.dataset.slot = i;
       b.onpointerdown = e => { e.stopPropagation(); if (this.game.useSkill(i)) this.pulse(b); else this.shake(b); };
@@ -224,7 +228,7 @@ export class UI {
       let left = 0, total = 1;
       if (b.classList.contains('hero')) { left = g.heroSkillCd; total = 15; }
       else if (b.classList.contains('job')) { left = g.jobSkillCd || 0; total = (JOBS[this.state.job] || JOBS.mage).skill.cd; }
-      else { const u = g.units.find(x => x.kind === 'pet' && x.slot === +b.dataset.slot); if (u) { left = u.dead ? 99 : u.skillCd; total = SPECIES[u.sp].skill.cd; b.querySelector('.inh')?.classList.toggle('ready', !u.dead && u.skill2Cd <= 0); } }
+      else { const u = g.units.find(x => x.kind === 'pet' && x.slot === +b.dataset.slot); if (u) { left = u.dead ? 99 : u.skillCd; total = SPECIES[u.sp].skill.cd; b.querySelector('.inh.i0')?.classList.toggle('ready', !u.dead && u.skill2Cd <= 0); b.querySelector('.inh.i1')?.classList.toggle('ready', !u.dead && u.skill3Cd <= 0); } }
       cd.style.height = Math.max(0, Math.min(1, left / total)) * 100 + '%';
       b.classList.toggle('ready', left <= 0);
     }
@@ -542,17 +546,19 @@ export class UI {
   }
   closePanel() { $('#panel').classList.add('hidden'); this.panelOpen = false; }
 
-  monCard(m, extra = '') {
+  monCard(m, extra = '', core = false) {
     const s = SPECIES[m.sp];
-    const inParty = this.state.party.includes(m.id);
-    return `<div class="mcard ${m.shiny ? 'shiny' : ''} ${inParty ? 'inparty' : ''}" data-id="${m.id}">
+    const inParty = !core && this.state.party.includes(m.id);
+    if (core) extra += '<span class="badge core">💎</span>';
+    return `<div class="mcard ${core ? 'core' : ''} ${m.shiny ? 'shiny' : ''} ${inParty ? 'inparty' : ''}" data-id="${m.id}">
       <img src="${icon(m.sp, m.shiny)}"><div class="nm">${m.shiny ? '✨' : ''}${s.name}</div>
       <div class="sub"><span class="lv">Lv ${m.lv}</span>${elemTags(m.sp)}</div>${inParty ? '<span class="badge">함께</span>' : ''}${extra}</div>`;
   }
 
   bagTabs(b, on) {
-    const t = h('div', 'tabs', `<button data-t="mon" class="${on === 'mon' ? 'on' : ''}">🐣 몽글이</button><button data-t="eq" class="${on === 'eq' ? 'on' : ''}">🗡️ 장비 <small>${(this.state.inv || []).length}</small></button>`);
-    t.onclick = e => { const x = e.target.closest('button'); if (x) (x.dataset.t === 'eq' ? this.openEquip() : this.openBox()); };
+    const s = this.state, tb = (k, label) => `<button data-t="${k}" class="${on === k ? 'on' : ''}">${label}</button>`;
+    const t = h('div', 'tabs', tb('mon', '🐣 몽글이') + tb('core', `💎 코어 <small>${(s.cores || []).length}</small>`) + tb('eq', `🗡️ 장비 <small>${(s.inv || []).length}</small>`) + tb('stat', `⭐ 능력치${s.statPts ? ` <small class="nb">${s.statPts}</small>` : ''}`));
+    t.onclick = e => { const x = e.target.closest('button'); if (!x) return; ({ eq: () => this.openEquip(), core: () => this.openCores(), stat: () => this.openStats(), mon: () => this.openBox() })[x.dataset.t](); };
     b.querySelector('h2').after(t);
   }
 
@@ -686,7 +692,7 @@ export class UI {
     $('#gNo', b).onclick = () => this.openMon(m.id);
     $('#gOk', b).onclick = async () => {
       const msg = $('#gMsg', b).value.trim();
-      const ok = await this.net.sendGift({ kind: 'mon', mon: { sp: m.sp, lv: m.lv, shiny: !!m.shiny, ...(m.inh ? { inh: m.inh } : {}) }, msg }).catch(() => false);
+      const ok = await this.net.sendGift({ kind: 'mon', mon: { sp: m.sp, lv: m.lv, shiny: !!m.shiny, ...(m.inh ? { inh: m.inh } : {}), ...(m.inh2 ? { inh2: m.inh2 } : {}) }, msg }).catch(() => false);
       if (!ok) { this.toast('선물을 못 보냈어요. 인터넷을 확인해 주세요'); return; }
       s.monggles = s.monggles.filter(x => x !== m);
       if (s.party.includes(m.id)) { s.party = s.party.filter(x => x !== m.id); if (!s.party.length) s.party.push(s.monggles[0].id); this.game.syncParty(); }
@@ -715,10 +721,16 @@ export class UI {
     this.boxWarned = false;
     let what = '';
     if (g.kind === 'mon' && g.mon && SPECIES[g.mon.sp]) {
-      const m = { id: s.nextId++, sp: g.mon.sp, lv: g.mon.lv || 1, exp: 0, shiny: !!g.mon.shiny, ...(g.mon.inh ? { inh: g.mon.inh } : {}) };
+      const m = { id: s.nextId++, sp: g.mon.sp, lv: g.mon.lv || 1, exp: 0, shiny: !!g.mon.shiny, ...(g.mon.inh ? { inh: g.mon.inh } : {}), ...(g.mon.inh2 ? { inh2: g.mon.inh2 } : {}) };
       s.monggles.push(m); s.dex[m.sp] = (s.dex[m.sp] || 0) + 1;
       what = `<img src="${icon(m.sp, m.shiny)}"><h3>${m.shiny ? '반짝이 ' : ''}${SPECIES[m.sp].name} <span class="lv">Lv ${m.lv}</span></h3>`;
       this.game.refreshVivid();
+    } else if (g.kind === 'core' && g.core && SPECIES[g.core.sp]) {
+      s.cores = s.cores || [];
+      if (s.cores.length >= CORE_MAX) { this.toast(`🎁 ${g.from}의 코어 선물이 왔는데 코어 보관함이 꽉 찼어요`); setTimeout(() => this.giftArrived(g, done), 20000); return; }
+      const c = { id: s.nextId++, sp: g.core.sp, lv: g.core.lv || 1, shiny: !!g.core.shiny, ...(g.core.inh ? { inh: g.core.inh } : {}), ...(g.core.inh2 ? { inh2: g.core.inh2 } : {}) };
+      s.cores.push(c);
+      what = `<img src="${icon(c.sp, c.shiny)}"><h3>💎 ${SPECIES[c.sp].name} 코어 <span class="lv">Lv ${c.lv}</span></h3>`;
     } else if (g.kind === 'dust') {
       s.dust += g.dust || 0;
       what = `<div style="font-size:70px">✦</div><h3>반짝가루 ${g.dust}개</h3>`;
@@ -752,26 +764,29 @@ export class UI {
     const sp = SPECIES[m.sp];
     const inParty = s.party.includes(id);
     const b = this.openPanel(`${m.shiny ? '✨ ' : ''}${sp.name}`);
-    const inh = m.inh && SPECIES[m.inh] ? `<div class="kv"><span>물려받은 기술 🧬</span><b>${SPECIES[m.inh].skill.name} <small class="auto">싸울 때 알아서 써요</small></b></div>` : '';
+    const inhs = [m.inh, m.inh2].filter(k => k && SPECIES[k]);
+    const inh = inhs.length ? `<div class="kv"><span>물려받은 기술 🧬</span><b>${inhs.map(k => SPECIES[k].skill.name).join(' · ')} <small class="auto">싸울 때 알아서 써요</small></b></div>` : '';
     const st = g ? (inParty ? g.units.find(u => u.data === m) : null) : null;
     b.insertAdjacentHTML('beforeend', `
       <div class="detail">
         <img class="big" src="${icon(m.sp, m.shiny)}">
         <div class="info">
           <div class="sub">${elemTags(m.sp)} <span class="role">${ROLE[sp.role]}</span> <span class="lv">Lv ${m.lv}</span></div>
-          <div class="bar xp"><i style="width:${m.lv >= MAX_LV ? 100 : m.exp / expToNext(m.lv) * 100}%"></i></div>
+          <div class="bar xp"><i style="width:${m.lv >= PET_MAX_LV ? 100 : m.exp / expToNext(m.lv) * 100}%"></i></div>
           <div class="kv"><span>기술</span><b>${sp.skill.name}</b></div>${inh}
           <div class="kv"><span>단계</span><b>${sp.stage}단계</b></div>
           ${st ? `<div class="kv"><span>체력</span><b>${Math.ceil(st.hp)} / ${st.maxHp}</b></div>` : ''}
           <div class="btns">
             <button class="btn ${inParty ? 'ghost' : ''}" id="tgl">${inParty ? '쉬게 하기' : '데리고 다니기'}</button>
             <button class="btn ghost" id="gift">🎁 선물</button>
+            <button class="btn ghost" id="toCore">💎 코어로</button>
             <button class="btn ghost" id="back">← 가방</button>
           </div>
         </div>
       </div>`);
     $('#back', b).onclick = () => this.openBox();
     $('#gift', b).onclick = () => this.giftMon(m);
+    $('#toCore', b).onclick = () => this.monToCore(m);
     $('#tgl', b).onclick = () => {
       if (inParty) {
         if (s.party.length <= 1) { this.toast('최소 한 마리는 데리고 다녀야 해요'); return; }
@@ -788,15 +803,137 @@ export class UI {
     const s = this.state;
     const n = Object.keys(s.dex).length;
     const b = this.openPanel(`📖 도감 <small>${n} / ${DEX_ORDER.length}</small>`);
-    const grid = h('div', 'grid dex');
-    grid.innerHTML = DEX_ORDER.map(sp => {
-      const got = s.dex[sp];
-      const S = SPECIES[sp];
-      return got ? `<div class="mcard"><img src="${icon(sp)}"><div class="nm">${S.name}</div><div class="sub">${elemTags(sp)}</div></div>`
-        : `<div class="mcard unknown"><img src="${icon(sp)}"><div class="nm">???</div><div class="sub">${S.couple ? '💞 둘이 섞어야 태어나요' : S.stage >= 2 ? '조합으로 태어나요' : '야생에서 만나요'}</div></div>`;
-    }).join('');
+    b.insertAdjacentHTML('beforeend', `<p class="hint beats">상성: ${ELEM[ELEM_ORDER[0]].icon}불 → 🌿풀 → 🪨땅 → 🍃바람 → 💧물 → 🔥불 (화살표 쪽에 1.5배)</p>`);
+    const groups = [[1, '1단계 · 야생'], [2, '2단계'], [3, '3단계'], [4, '4단계 · 전설'], [5, '5단계'], ['c', '💞 둘이 섞기']];
+    for (const [st, label] of groups) {
+      const list = DEX_ORDER.filter(sp => st === 'c' ? SPECIES[sp].couple : !SPECIES[sp].couple && SPECIES[sp].stage === st);
+      const got = list.filter(sp => s.dex[sp]).length;
+      b.insertAdjacentHTML('beforeend', `<h4 class="dexh">${label} <small>${got}/${list.length}</small></h4>`);
+      const grid = h('div', 'grid dex');
+      grid.innerHTML = list.map(sp => {
+        const S = SPECIES[sp], el = S.elems.slice(0, 3).map(e => ELEM[e].icon).join('');
+        return s.dex[sp] ? `<div class="mcard" data-sp="${sp}"><img src="${icon(sp)}"><div class="nm">${S.name}</div><div class="sub">${elemTags(sp)}</div></div>`
+          : `<div class="mcard unknown" data-sp="${sp}"><img src="${icon(sp)}"><div class="nm">???</div><div class="sub">${S.secret ? '🤫 숨은 조합' : S.couple ? '💞 둘이 섞기' : S.stage >= 2 ? el + ' 조합' : el + ' 야생'}</div></div>`;
+      }).join('');
+      grid.onclick = e => { const c = e.target.closest('.mcard'); if (c) this.openRecipe(c.dataset.sp); };
+      b.appendChild(grid);
+    }
+    b.appendChild(h('p', 'hint', '몽글이를 누르면 어떻게 태어나는지 볼 수 있어요. 새 몽글이를 만날수록 섬에 색이 돌아와요.'));
+  }
+
+  openRecipe(sp) {
+    const s = this.state, S = SPECIES[sp], known = !!s.dex[sp];
+    const b = this.openPanel(known ? S.name : '???');
+    const tag = e => `${ELEM[e].icon}${ELEM[e].name}`;
+    const lines = [];
+    if (S.couple) lines.push('💞 믹스 솥의 <b>둘이 섞기</b>로만 태어나요');
+    else if (S.stage === 1) {
+      const where = []; for (const z of ZONES_LIST()) if (z.spawns?.includes(sp)) where.push(`${z.name} (Lv${z.lv[0]}~${z.lv[1]})`);
+      lines.push(`🌳 야생: ${where.join(', ') || '어딘가'}`);
+    }
+    for (const r of recipesFor(sp)) {
+      if (r.exact) lines.push(r.secret && !known ? '🤫 숨은 조합이 있대요… 이것저것 섞어 봐요' : `🍲 ${r.exact.map(k => s.dex[k] ? SPECIES[k].name : '???').join(' + ')}`);
+      else if (r.elems) lines.push(`🍲 ${tag(r.elems[0])} ${r.stage}단계 + ${tag(r.elems[1])} ${r.stage}단계`);
+      else if (r.text) lines.push('🍲 ' + r.text);
+    }
+    b.insertAdjacentHTML('beforeend', `<div class="detail"><img class="big ${known ? '' : 'sil'}" src="${icon(sp)}"><div class="info">
+      <div class="sub">${elemTags(sp)} <span class="role">${ROLE[S.role]}</span> <span class="lv">${S.stage}단계</span></div>
+      ${known ? `<div class="kv"><span>기술</span><b>${S.skill.name}</b></div>` : ''}
+      <div class="recipes">${lines.map(l => `<p>${l}</p>`).join('')}</div>
+      <p class="hint">속성은 대표(첫 번째) 속성으로 봐요. 단계가 다르면 낮은 쪽 단계 +1로 태어나요.</p>
+      <div class="btns"><button class="btn ghost" id="back">← 도감</button></div></div></div>`);
+    $('#back', b).onclick = () => this.openDex();
+  }
+
+  // ---------- 💎 코어 ----------
+  openCores() {
+    const s = this.state; s.cores = s.cores || [];
+    const b = this.openPanel(`🎒 가방 <small>💎 코어 ${s.cores.length}/${CORE_MAX}</small>`);
+    this.bagTabs(b, 'core');
+    if (!s.cores.length) b.insertAdjacentHTML('beforeend', '<p class="hint">몬스터를 쓰러뜨리면 가끔 💎 코어가 나와요. 보스는 꼭 줘요.<br>몽글이를 코어로 만들어 가방 자리를 비울 수도 있어요.</p>');
+    const grid = h('div', 'grid');
+    grid.innerHTML = s.cores.map(c => this.monCard(c, '', true)).join('');
     b.appendChild(grid);
-    b.appendChild(h('p', 'hint', '새 몽글이를 만날수록 섬에 색이 돌아와요.'));
+    if (s.cores.length) b.appendChild(h('p', 'hint', '코어는 가방 칸을 안 차지해요. 믹스 솥에 바로 넣거나, 깨워서 데리고 다닐 수 있어요.'));
+    grid.onclick = e => { const c = e.target.closest('.mcard'); if (c) this.openCore(+c.dataset.id); };
+  }
+  openCore(id) {
+    const s = this.state, c = (s.cores || []).find(x => x.id === id); if (!c) return this.openCores();
+    const S = SPECIES[c.sp], d = coreDust(c);
+    const inhs = [c.inh, c.inh2].filter(k => k && SPECIES[k]);
+    const b = this.openPanel(`💎 ${S.name} 코어`);
+    b.insertAdjacentHTML('beforeend', `<div class="detail"><img class="big corei" src="${icon(c.sp, c.shiny)}"><div class="info">
+      <div class="sub">${elemTags(c.sp)} <span class="role">${ROLE[S.role]}</span> <span class="lv">Lv ${c.lv}</span></div>
+      <div class="kv"><span>기술</span><b>${S.skill.name}</b></div>
+      ${inhs.length ? `<div class="kv"><span>물려받은 기술 🧬</span><b>${inhs.map(k => SPECIES[k].skill.name).join(' · ')}</b></div>` : ''}
+      <div class="btns"><button class="btn" id="cWake">깨우기</button><button class="btn ghost" id="cGift">🎁 선물</button><button class="btn ghost" id="cDust">✦${d}로 바꾸기</button><button class="btn ghost" id="back">← 코어</button></div>
+      <p class="hint">깨우면 Lv${c.lv} 몽글이로 가방에 들어가요.</p></div></div>`);
+    $('#back', b).onclick = () => this.openCores();
+    $('#cWake', b).onclick = () => {
+      if (s.monggles.length >= BOX_MAX) { this.toast(`가방이 꽉 찼어요 (${BOX_MAX}칸)`); return; }
+      s.cores = s.cores.filter(x => x !== c);
+      const m = { id: c.id, sp: c.sp, lv: c.lv, exp: 0, shiny: !!c.shiny, ...(c.inh ? { inh: c.inh } : {}), ...(c.inh2 ? { inh2: c.inh2 } : {}) };
+      s.monggles.push(m);
+      const isNew = !s.dex[m.sp]; s.dex[m.sp] = (s.dex[m.sp] || 0) + 1;
+      if (s.party.length < this.game.partySize()) { s.party.push(m.id); this.game.syncParty(); }
+      this.game.refreshVivid(); this.save(); sfx.born(false);
+      this.toast(isNew ? `✨ ${S.name}가 깨어났어요! 도감에 등록했어요` : `${S.name}가 깨어났어요`);
+      this.openMon(m.id);
+    };
+    $('#cDust', b).onclick = () => {
+      s.cores = s.cores.filter(x => x !== c); s.dust += d;
+      this.save(); sfx.dust(); this.renderTop(); this.toast(`✦ 반짝가루 ${d}개로 바꿨어요`); this.openCores();
+    };
+    $('#cGift', b).onclick = async () => {
+      const to = this.net?.giftTarget?.();
+      if (!this.net?.on || !to) { this.toast('상대가 한 번이라도 접속해야 선물할 수 있어요'); return; }
+      const ok = await this.net.sendGift({ kind: 'core', core: { sp: c.sp, lv: c.lv, shiny: !!c.shiny, ...(c.inh ? { inh: c.inh } : {}), ...(c.inh2 ? { inh2: c.inh2 } : {}) } }).catch(() => false);
+      if (!ok) { this.toast('선물을 못 보냈어요'); return; }
+      s.cores = s.cores.filter(x => x !== c); this.save(); sfx.befriend();
+      this.toast(`🎁 ${to.name}에게 ${S.name} 코어를 보냈어요`); this.openCores();
+    };
+  }
+  monToCore(m) {
+    const s = this.state; s.cores = s.cores || [];
+    if (s.monggles.length <= 1) { this.toast('마지막 한 마리는 코어로 만들 수 없어요'); return; }
+    if (s.coupleOut?.monId === m.id) { this.toast('💞 둘이 섞기를 기다리는 몽글이예요'); return; }
+    if (s.cores.length >= CORE_MAX) { this.toast(`코어 보관함이 꽉 찼어요 (${CORE_MAX}개)`); return; }
+    s.monggles = s.monggles.filter(x => x !== m);
+    if (s.party.includes(m.id)) { s.party = s.party.filter(x => x !== m.id); if (!s.party.length) s.party.push(s.monggles[0].id); this.game.syncParty(); }
+    s.cores.push({ id: m.id, sp: m.sp, lv: m.lv, shiny: !!m.shiny, ...(m.inh ? { inh: m.inh } : {}), ...(m.inh2 ? { inh2: m.inh2 } : {}) });
+    this.save(); sfx.dust(); this.toast(`💎 ${SPECIES[m.sp].name}를 코어로 만들었어요 (경험치는 레벨까지만 남아요)`);
+    this.openCores();
+  }
+
+  // ---------- ⭐ 능력치 ----------
+  openStats() {
+    const s = this.state; s.stats = s.stats || { str: 0, vit: 0, agi: 0 };
+    const g = this.game, st = g.heroFullStats();
+    const b = this.openPanel(`⭐ 능력치 <small>남은 점수 ${s.statPts || 0}</small>`);
+    this.bagTabs(b, 'stat');
+    const row = (k, ic, name, desc) => `<div class="statRow"><span class="si">${ic}</span><div><b>${name} <em>${s.stats[k]}</em></b><small>${desc}</small></div>
+      <button class="btn" data-k="${k}" ${s.statPts ? '' : 'disabled'}>+1</button><button class="btn ghost" data-k5="${k}" ${s.statPts >= 5 ? '' : 'disabled'}>+5</button></div>`;
+    b.insertAdjacentHTML('beforeend', `<div class="stats">
+      ${row('str', '💪', '힘', '공격력 +1.2씩')}
+      ${row('vit', '❤️', '체력', '최대 체력 +10씩')}
+      ${row('agi', '💨', '민첩', '공격이 빨라지고 치명타가 늘어요')}
+      </div>
+      <div class="kvs"><div class="kv"><span>공격력</span><b>${Math.round(st.atk)}</b></div><div class="kv"><span>체력</span><b>${st.maxHp}</b></div>
+      <div class="kv"><span>공격 간격</span><b>${st.rate.toFixed(2)}초</b></div><div class="kv"><span>치명타</span><b>${Math.round(st.crit * 100)}%</b></div></div>
+      <div class="btns center"><button class="btn ghost" id="sReset">다시 나누기 (무료)</button></div>
+      <p class="hint">레벨이 오를 때마다 점수 ${3}점을 받아요.</p>`);
+    b.querySelector('.stats').onclick = e => {
+      const x = e.target.closest('button'); if (!x || x.disabled) return;
+      const k = x.dataset.k || x.dataset.k5, n = x.dataset.k5 ? 5 : 1;
+      if ((s.statPts || 0) < n) return;
+      s.stats[k] += n; s.statPts -= n;
+      g.refreshHero(); this.save(); sfx.tap(); this.renderTop(); this.openStats();
+    };
+    $('#sReset', b).onclick = () => {
+      s.statPts = (s.statPts || 0) + s.stats.str + s.stats.vit + s.stats.agi;
+      s.stats = { str: 0, vit: 0, agi: 0 };
+      g.refreshHero(); this.save(); sfx.tap(); this.renderTop(); this.openStats();
+    };
   }
 
   // ---------- 믹스 솥 ----------
@@ -806,7 +943,9 @@ export class UI {
     this.mixTabs(b, 'solo');
     const waitId = s.coupleOut?.monId;
     pick = pick.filter(id => id !== waitId);
-    const [a, c] = pick.map(id => s.monggles.find(m => m.id === id));
+    s.cores = s.cores || [];
+    const all = [...s.monggles, ...s.cores];
+    const [a, c] = pick.map(id => all.find(m => m.id === id));
     const res = a && c ? mixResult(a.sp, c.sp) : null;
     const slot = m => m ? `<div class="slot full"><img src="${icon(m.sp, m.shiny)}"><b>${SPECIES[m.sp].name}</b><span class="lv">Lv${m.lv}</span></div>` : `<div class="slot">?</div>`;
     let resHtml = '<div class="slot res">?</div>';
@@ -818,13 +957,14 @@ export class UI {
     b.insertAdjacentHTML('beforeend', `
       <div class="mixrow">${slot(a)}<span class="op">+</span>${slot(c)}<span class="op">=</span>${resHtml}</div>
       <div class="btns center"><button class="btn big" id="doMix">섞기!</button></div>
-      <p class="hint">Lv${MIX_MIN_LV} 이상 몽글이 두 마리를 골라요. 재료 두 마리는 새 몽글이로 다시 태어나요.</p>`);
+      <p class="hint">Lv${MIX_MIN_LV} 이상 몽글이(💎코어도 돼요) 두 마리를 골라요. 재료 두 마리는 새 몽글이로 다시 태어나요. 단계가 다르면 <b>낮은 쪽 단계 +1</b>로, 같은 단계면 다음 단계로 태어나요.</p>`);
     const grid = h('div', 'grid');
-    grid.innerHTML = s.monggles.map(m => this.monCard(m, m.id === waitId ? '<span class="lock love">💞 기다리는 중</span>' : m.lv < MIX_MIN_LV ? '<span class="lock">Lv' + MIX_MIN_LV + '부터</span>' : '')).join('');
+    grid.innerHTML = s.monggles.map(m => this.monCard(m, m.id === waitId ? '<span class="lock love">💞 기다리는 중</span>' : m.lv < MIX_MIN_LV ? '<span class="lock">Lv' + MIX_MIN_LV + '부터</span>' : '')).join('')
+      + s.cores.map(m => this.monCard(m, m.lv < MIX_MIN_LV ? '<span class="lock">Lv' + MIX_MIN_LV + '부터</span>' : '', true)).join('');
     for (const el of grid.children) {
       const id = +el.dataset.id;
       if (pick.includes(id)) el.classList.add('picked');
-      if (s.monggles.find(m => m.id === id).lv < MIX_MIN_LV || id === waitId) el.classList.add('locked');
+      if (all.find(m => m.id === id).lv < MIX_MIN_LV || id === waitId) el.classList.add('locked');
     }
     b.appendChild(grid);
     grid.onclick = e => {
@@ -838,9 +978,11 @@ export class UI {
     const btn = $('#doMix', b);
     const need = a && c ? mixMinLv(a.sp, c.sp) : MIX_MIN_LV;
     const lvOk = a && c && a.lv >= need && c.lv >= need;
-    const ok = a && c && res && lvOk && s.dust >= MIX_COST;
+    const boxOk = !(a && c) || s.monggles.length - [a, c].filter(x => s.monggles.includes(x)).length + 1 <= BOX_MAX;
+    const ok = a && c && res && lvOk && boxOk && s.dust >= MIX_COST;
     btn.disabled = !ok;
-    if (a && c && res && !lvOk) btn.textContent = `3단계는 둘 다 Lv${need}부터 섞을 수 있어요`;
+    if (a && c && res && !lvOk) btn.textContent = `${SPECIES[res].stage}단계는 둘 다 Lv${need}부터 섞을 수 있어요`;
+    else if (a && c && res && !boxOk) btn.textContent = '가방이 꽉 찼어요';
     else if (a && c && res && s.dust < MIX_COST) btn.textContent = `반짝가루가 ${MIX_COST - s.dust}개 모자라요`;
     btn.onclick = () => ok && this.doMix(a, c, res);
   }
@@ -849,11 +991,15 @@ export class UI {
     const s = this.state, g = this.game;
     const shinyRate = a.sp === c.sp ? 0.2 : 0.05;
     const shiny = Math.random() < shinyRate;
-    const inheritFrom = Math.random() < 0.5 ? a : c;
-    const m = { id: s.nextId++, sp: res, lv: 1, exp: 0, shiny, inh: inheritFrom.sp !== res ? inheritFrom.sp : undefined };
-    if (!m.inh) delete m.inh;
+    const m = { id: s.nextId++, sp: res, lv: 1, exp: 0, shiny };
+    // 물려받은 기술: 재료 둘(과 재료가 물려받았던 기술) 중에서 하나, 30%는 하나 더
+    const pool = [...new Set([a.sp, c.sp, a.inh, a.inh2, c.inh, c.inh2].filter(k => k && k !== res && SPECIES[k]))];
+    pool.sort(() => Math.random() - 0.5);
+    const first = [a.sp, c.sp].filter(k => k !== res)[Math.random() < 0.5 ? 0 : 1] || pool[0];
+    if (first) { m.inh = first; const rest = pool.filter(k => k !== first); if (rest.length && Math.random() < 0.3) m.inh2 = rest[0]; }
     s.dust -= MIX_COST;
     s.mixes = (s.mixes || 0) + 1;
+    s.cores = (s.cores || []).filter(x => x !== a && x !== c);
     s.monggles = s.monggles.filter(x => x !== a && x !== c);
     s.party = s.party.filter(id => id !== a.id && id !== c.id);
     s.monggles.push(m);
@@ -871,7 +1017,7 @@ export class UI {
         <div class="born ${shiny ? 'shiny' : ''}">
           <img src="${icon(res, shiny)}"><h3>${shiny ? '반짝이 ' : ''}${SPECIES[res].name}</h3>
           <div class="sub">${elemTags(res)} <span class="role">${ROLE[SPECIES[res].role]}</span></div>
-          ${m.inh ? `<p>물려받은 기술: <b>${SPECIES[m.inh].skill.name}</b></p>` : ''}
+          ${m.inh ? `<p>물려받은 기술: <b>${[m.inh, m.inh2].filter(Boolean).map(k => SPECIES[k].skill.name).join(' · ')}</b></p>` : ''}
           ${isNew ? '<p class="new">도감에 새로 등록됐어요 · 섬에 색이 조금 돌아왔어요</p>' : ''}
         </div>
         <div class="btns center"><button class="btn" id="again">또 섞기</button><button class="btn ghost" id="ok">닫기</button></div>`);

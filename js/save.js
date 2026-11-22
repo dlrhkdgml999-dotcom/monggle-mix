@@ -141,6 +141,9 @@ export function normalize(s) {
   s.inv = Array.isArray(s.inv) ? s.inv.filter(Boolean) : Object.values(s.inv || {});
   s.eq = s.eq || {};
   s.nextItem = s.nextItem || 1;
+  s.cores = Array.isArray(s.cores) ? s.cores.filter(Boolean) : Object.values(s.cores || {});
+  if (!s.stats) { s.stats = { str: 0, vit: 0, agi: 0 }; s.statPts = Math.max(0, (s.lv || 1) - 1) * 3; } // 예전 저장: 지금까지 레벨만큼 점수
+  s.statPts = s.statPts || 0;
   s.coupleIn = Array.isArray(s.coupleIn) ? s.coupleIn.filter(Boolean) : Object.values(s.coupleIn || {});
   if (s.coupleOut && !s.monggles.some(m => m.id === s.coupleOut.monId)) s.coupleOut = null;
   return s;

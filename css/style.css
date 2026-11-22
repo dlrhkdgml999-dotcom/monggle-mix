@@ -338,3 +338,25 @@ button { font-family: inherit; color: inherit; border: 0; cursor: pointer; }
 .brew.love { flex-direction: column; align-items: center; }
 .brew.love .hearts { margin-top: -20px; }
 .born.love img { filter: drop-shadow(0 0 14px #ffb3cf); }
+
+/* 💎 코어 · ⭐ 능력치 · 📖 도감 레시피 */
+.mcard.core { background: linear-gradient(160deg, #f2fdff, #e6f0ff); border-color: #bfe8ff; }
+.mcard.core img { filter: drop-shadow(0 0 6px #9ffcff); }
+.mcard .badge.core { left: auto; right: 6px; background: #6fc8ff; }
+img.corei { filter: drop-shadow(0 0 14px #9ffcff); }
+img.big.sil { filter: brightness(0) opacity(.3); }
+#statPts { margin-left: auto; background: linear-gradient(180deg, #ffe58a, #ffc93d); color: #6b4a00; border-radius: 10px; padding: 0 7px; font-size: 13px; animation: wobble 1s infinite; }
+.stats { display: flex; flex-direction: column; gap: 6px; }
+.statRow { display: flex; align-items: center; gap: 8px; background: #fff; border-radius: 14px; padding: 6px 10px; }
+.statRow .si { font-size: 26px; }
+.statRow > div { flex: 1; text-align: left; }
+.statRow b em { font-style: normal; color: var(--lilac); margin-left: 4px; }
+.statRow small { display: block; color: var(--soft); font-size: 12px; }
+.statRow .btn { padding: 6px 12px; font-size: 15px; }
+.kvs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 14px; margin-top: 8px; }
+.dexh { margin: 10px 0 4px; text-align: left; color: var(--ink); font-size: 16px; }
+.dexh small { color: var(--soft); font-weight: normal; }
+.hint.beats { margin: -4px 0 4px; }
+.recipes { text-align: left; margin: 6px 0; }
+.recipes p { margin: 3px 0; font-size: 14px; background: #f8f3ff; border-radius: 10px; padding: 4px 10px; }
+.skill .inh.i1 { top: 26px; }
