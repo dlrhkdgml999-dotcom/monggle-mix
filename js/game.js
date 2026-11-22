@@ -884,6 +884,12 @@ export class Game {
     if (zone && zone.safe) h.hp = Math.min(h.maxHp, h.hp + h.maxHp * 0.12 * dt);
     else h.hp = Math.min(h.maxHp, h.hp + h.maxHp * 0.008 * dt);
     h.atkCd -= dt;
+    // 🤖 자동 사냥: 가까운 몬스터 찾기, 기술·물약 알아서
+    if (this.state.auto) {
+      if (!h.target && !h.moveTo) { const t = this.nearestEnemy(h, 9); if (t && !(t.boss && t.hp > t.maxHp * 0.99 && !this.state.autoBoss)) h.target = t; }
+      if (h.target && this.jobSkillCd <= 0 && dist2(h.target.model.root.position, h.model.root.position) < 8) this.jobSkill();
+      if (h.hp < h.maxHp * 0.3 && this.state.items?.potion && !(this.potionCd > 0)) this.usePotion();
+    }
     // 나를 때리는 적이 있으면 자동으로 상대
     if (!h.target && !h.moveTo) {
       const att = this.units.find(o => o.kind === 'wild' && !o.dead && (o.target === h || o.target?.kind === 'pet') && dist2(o.model.root.position, h.model.root.position) < 7);
@@ -912,6 +918,11 @@ export class Game {
     if (zone && zone.safe) u.hp = Math.min(u.maxHp, u.hp + u.maxHp * 0.12 * dt);
     else u.hp = Math.min(u.maxHp, u.hp + u.maxHp * 0.01 * dt);
     u.atkCd -= dt; if (u.skillCd > 0) u.skillCd -= dt;
+    if (this.state.auto && u.skillCd <= 0 && !u.dead) {
+      const sk = SPECIES[u.sp].skill;
+      const needHeal = this.units.some(o => (o.kind === 'hero' || o.kind === 'pet') && !o.dead && o.hp < o.maxHp * 0.6);
+      if (sk.type === 'heal' ? needHeal : (u.target || this.hero.target)) this.useSkill(u.slot);
+    }
     const dHero = dist2(u.model.root.position, hp);
     // 주인공이 멀어지면 무조건 따라감
     if (dHero > 14) u.target = null;

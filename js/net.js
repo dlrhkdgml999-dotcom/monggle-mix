@@ -143,7 +143,7 @@ export class Net {
       if (p) { this.partnerUid = p.uid; this.partnerName = p.name; try { localStorage.setItem('monggle-partner', JSON.stringify({ uid: p.uid, name: p.name })); } catch {} }
       if (p && p.v && p.v !== VERSION && this.warnedV !== p.v) {
         this.warnedV = p.v;
-        this.ui.toast(p.v > VERSION ? '상대가 더 새 버전이에요. 새로고침해 주세요' : `${p.name}의 게임이 옛날 버전이에요. 새로고침해 달라고 해 주세요`);
+        this.ui.toast(`${p.name}와 게임 버전이 달라요. 둘 다 앱을 껐다 켜 주세요`);
       }
       this.checkCall();
       this.checkGame();

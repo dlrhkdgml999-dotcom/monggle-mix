@@ -271,3 +271,8 @@ button { font-family: inherit; color: inherit; border: 0; cursor: pointer; }
 .sitem > div { flex: 1; }
 .sitem p { margin: 2px 0 0; font-size: 13px; color: var(--soft); }
 .sitem em { font-style: normal; font-size: 12px; color: #7a56d6; }
+
+.autoBtn { position: absolute; right: calc(12px + var(--safe-r)); bottom: 94px; font-size: 14px; padding: 6px 12px; }
+.autoBtn b { color: var(--soft); }
+.autoBtn.on { background: #eafff0; box-shadow: 0 0 0 2px #6fd36a; }
+.autoBtn.on b { color: #34a853; }

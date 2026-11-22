@@ -61,7 +61,7 @@ export class UI {
     this.fx = $('#fx'); this.bars = $('#bars');
     this.build();
   }
-  attach(game, net) { this.game = game; this.net = net; this.renderTop(); this.renderParty(); this.renderSkills(); }
+  attach(game, net) { this.game = game; this.net = net; this.renderTop(); this.renderParty(); this.renderSkills(); this.drawAuto(); }
   save() { this.onSave(); }
 
   build() {
@@ -96,6 +96,7 @@ export class UI {
       <div id="centerBtns"><button id="shopBtn" class="mixBtn shop hidden">🏪 상점</button><button id="mixBtn" class="mixBtn hidden">🍲 믹스 솥 열기</button></div>
       <div id="buffs"></div>
       <div id="skills"></div>
+      <button id="autoBtn" class="pill autoBtn">🤖 자동 <b>OFF</b></button>
       <div id="panel" class="hidden"><div class="sheet"><button class="x">✕</button><div class="body"></div></div></div>
     `;
     $('#bagBtn').onclick = () => this.openBox();
@@ -111,6 +112,10 @@ export class UI {
     $('#panel .x').onclick = () => this.closePanel();
     $('#emoBtn').onclick = () => { $('#emoTray').classList.toggle('hidden'); sfx.tap(); };
     $('#shopBtn').onclick = () => this.openShop();
+    $('#autoBtn').onclick = () => {
+      this.state.auto = !this.state.auto; this.drawAuto(); this.save(); sfx.tap();
+      this.toast(this.state.auto ? '🤖 자동 사냥 켬: 가까운 몬스터를 알아서 공격하고 기술·물약도 써요' : '자동 사냥 끔');
+    };
     $('#potBtn').onclick = () => { if (this.game.usePotion()) this.pulse($('#potBtn')); };
     $('.chatOpen').onclick = e => { e.stopPropagation(); $('#emoTray').classList.add('hidden'); $('#chatRow').classList.remove('hidden'); $('#chatIn').focus(); };
     const sendChat = () => {
@@ -135,6 +140,12 @@ export class UI {
   }
 
   // ---------- 상단 ----------
+  drawAuto() {
+    const b = $('#autoBtn'); if (!b) return;
+    b.classList.toggle('on', !!this.state.auto);
+    b.querySelector('b').textContent = this.state.auto ? 'ON' : 'OFF';
+  }
+
   renderTop() {
     const s = this.state, g = this.game;
     $('#meName').textContent = s.name;
