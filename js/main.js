@@ -1,0 +1,196 @@
+// 몽글믹스 — 시작 화면, 렌더링, 입력, 게임 루프
+import * as THREE from '../lib/three.min.js';
+import { buildWorld } from './world.js';
+import { Game } from './game.js';
+import { UI } from './ui.js';
+import { Net } from './net.js';
+import { makeHero } from './models.js';
+import { newSave, loadLocal, save, checkLogin, pinLogin, loadCloud, normalize, currentUser, useProfileStorage, profileOfUser } from './save.js';
+
+const $ = s => document.querySelector(s);
+const params = new URLSearchParams(location.search);
+const TEST = params.has('test'); // 자동 테스트용
+
+// ---------- 렌더러 ----------
+const canvas = $('#c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, 1, 0.5, 120);
+const hemi = new THREE.HemisphereLight(0xffffff, 0xa6d38f, 1.6);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff4e0, 1.9);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 60 });
+scene.add(sun, sun.target);
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  // 세로 화면이면 더 멀리서
+  camera.fov = w > h ? 38 : 55;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+const world = buildWorld(scene);
+
+// ---------- 시작 화면 (비밀번호 4자리) ----------
+let state = null, game, ui, net;
+let pin = '';
+const dots = [...document.querySelectorAll('.dots i')];
+const who = $('#who');
+function drawPin() { dots.forEach((d, i) => d.classList.toggle('on', i < pin.length)); }
+document.querySelectorAll('.pad button').forEach(b => b.onclick = () => {
+  if (busy) return;
+  if (b.dataset.k === 'del') pin = pin.slice(0, -1);
+  else if (pin.length < 4) pin += b.textContent;
+  drawPin();
+  if (pin.length === 4) tryPin();
+});
+let busy = false;
+async function tryPin() {
+  busy = true;
+  who.textContent = '확인 중…';
+  const r = await pinLogin(pin);
+  if (r.error === 'wrong') {
+    who.textContent = '비밀번호가 달라요';
+    $('.dots').classList.add('shake'); setTimeout(() => $('.dots').classList.remove('shake'), 400);
+    pin = ''; drawPin(); busy = false; return;
+  }
+  if (r.error === 'auth/operation-not-allowed') $('#loginState').textContent = 'Firebase에서 이메일/비밀번호 로그인을 켜야 같이 놀 수 있어요. 지금은 이 폰에만 저장돼요';
+  else if (r.offline) $('#loginState').textContent = '인터넷 연결이 안 돼서 이 폰에만 저장돼요';
+  who.textContent = `${r.prof.name} 어서 와요!`;
+  await startAs(r.prof);
+}
+async function startAs(prof) {
+  useProfileStorage(prof.hash);
+  let s = null;
+  if (currentUser()) { try { s = await loadCloud(); } catch {} }
+  const local = loadLocal();
+  // 더 최근에 저장된 쪽으로
+  if (s && local) s = (local.savedAt || 0) > (s.savedAt || 0) ? local : s;
+  s = s || local || newSave(prof.name, prof.look);
+  s.name = prof.name; s.look = prof.look;
+  begin(s);
+}
+$('#guestBtn').onclick = () => { useProfileStorage(null); begin(loadLocal() || newSave('손님', 'boy')); };
+checkLogin().then(u => {
+  const prof = profileOfUser(u);
+  if (!prof || state) return;
+  const b = $('#resumeBtn');
+  b.textContent = `🟢 ${prof.name}(으)로 이어하기`;
+  b.classList.remove('hidden');
+  b.onclick = () => startAs(prof);
+});
+
+function begin(s) {
+  state = normalize(s);
+  $('#title').classList.add('hidden');
+  $('#hud').classList.remove('hidden');
+  try { if (!TEST) document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.('landscape')).catch(() => {}); } catch {}
+  ui = new UI({ camera, state, onSave: () => save(state) });
+  game = new Game({ scene, camera, state, ui, world });
+  net = new Net(ui);
+  ui.attach(game, net);
+  net.start(state);
+  ui.toast(`어서 와요, ${state.name}! 땅을 누르면 걸어가고, 몽글이를 누르면 같이 싸워요`);
+  save(state);
+  window.__game = game; window.__net = net; // 디버그용
+}
+
+// ---------- 입력 ----------
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+let pressing = false, dragTarget = false;
+function pick(e) {
+  ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+}
+canvas.addEventListener('pointerdown', e => {
+  if (!game || ui.panelOpen) return;
+  net?.ac?.resume?.();
+  pick(e);
+  const hits = ray.intersectObjects(game.pickables(), false);
+  if (hits.length) { game.tapUnit(hits[0].object.userData.unit); pressing = false; return; }
+  const g = ray.intersectObject(world.ground)[0];
+  if (g) { game.tapGround(g.point, false); pressing = true; dragTarget = true; }
+});
+canvas.addEventListener('pointermove', e => {
+  if (!pressing || !game) return;
+  pick(e);
+  const g = ray.intersectObject(world.ground)[0];
+  if (g) game.tapGround(g.point, true);
+});
+addEventListener('pointerup', () => pressing = false);
+addEventListener('pointercancel', () => pressing = false);
+
+// ---------- 상대방 캐릭터 ----------
+let partner = null;
+function updatePartner(dt) {
+  const p = net?.partner();
+  if (!p || p.x == null) {
+    if (partner) { scene.remove(partner.model.root); ui.detachPartner(); partner = null; }
+    return;
+  }
+  if (!partner || partner.look !== p.look) {
+    if (partner) scene.remove(partner.model.root);
+    const model = makeHero(p.look || 'girl');
+    model.root.position.set(p.x, 0, p.z);
+    scene.add(model.root);
+    partner = { model, look: p.look, t: 0 };
+    ui.attachPartner(model, p.name);
+  }
+  const r = partner.model.root.position;
+  const dx = p.x - r.x, dz = p.z - r.z, d = Math.hypot(dx, dz);
+  if (d > 25) r.set(p.x, 0, p.z);
+  else if (d > 0.05) {
+    const step = Math.min(d, 6 * dt);
+    r.x += dx / d * step; r.z += dz / d * step;
+    partner.model.root.rotation.y = Math.atan2(dx, dz);
+  }
+  partner.t += dt;
+  const hop = d > 0.1 ? Math.abs(Math.sin(partner.t * 11)) * 0.2 : 0;
+  partner.model.body.position.y = hop;
+}
+
+// ---------- 루프 ----------
+const clock = new THREE.Timer();
+const camPos = new THREE.Vector3(0, 16, 18), look3 = new THREE.Vector3();
+let saveT = 0, titleT = 0;
+function loop() {
+  requestAnimationFrame(loop);
+  clock.update();
+  const dt = Math.min(0.05, clock.getDelta());
+  world.update(dt, clock.getElapsed());
+  if (game) {
+    game.update(dt);
+    const hp = game.hero.model.root.position;
+    const wide = innerWidth > innerHeight;
+    const off = wide ? new THREE.Vector3(0, 10.5, 12.5) : new THREE.Vector3(0, 15, 16);
+    camPos.lerp(off.add(hp), Math.min(1, dt * 5));
+    camera.position.copy(camPos);
+    look3.lerp(new THREE.Vector3(hp.x, 0.6, hp.z), Math.min(1, dt * 6));
+    camera.lookAt(look3);
+    sun.position.set(hp.x + 8, 18, hp.z + 6); sun.target.position.set(hp.x, 0, hp.z);
+    updatePartner(dt);
+    ui.tick();
+    net.sendPos(hp, game.lastZone?.id, game.hero.hp, game.hero.maxHp);
+    saveT += dt;
+    if (saveT > 15) { saveT = 0; save(state); }
+  } else {
+    // 시작 화면: 천천히 마을을 도는 카메라
+    titleT += dt * 0.08;
+    camera.position.set(Math.sin(titleT) * 18, 12, Math.cos(titleT) * 18);
+    camera.lookAt(0, 1, 0);
+    sun.position.set(8, 18, 6); sun.target.position.set(0, 0, 0);
+  }
+  renderer.render(scene, camera);
+}
+loop();
+
+document.addEventListener('visibilitychange', () => { if (document.hidden && state) save(state); });
+if (TEST && params.get('test') === 'auto') $('#guestBtn').onclick();

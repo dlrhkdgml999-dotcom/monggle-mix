@@ -1,0 +1,20 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid && (auth.token.email === 'uf930e552ed9a52a4@monggle-mix.app' || auth.token.email === 'u13cc2081f0e84ad7@monggle-mix.app')"
+      }
+    },
+    "presence": {
+      ".read": "auth != null && (auth.token.email === 'uf930e552ed9a52a4@monggle-mix.app' || auth.token.email === 'u13cc2081f0e84ad7@monggle-mix.app')",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid && (auth.token.email === 'uf930e552ed9a52a4@monggle-mix.app' || auth.token.email === 'u13cc2081f0e84ad7@monggle-mix.app')"
+      }
+    },
+    "rtc": {
+      ".read": "auth != null && (auth.token.email === 'uf930e552ed9a52a4@monggle-mix.app' || auth.token.email === 'u13cc2081f0e84ad7@monggle-mix.app')",
+      ".write": "auth != null && (auth.token.email === 'uf930e552ed9a52a4@monggle-mix.app' || auth.token.email === 'u13cc2081f0e84ad7@monggle-mix.app')"
+    }
+  }
+}

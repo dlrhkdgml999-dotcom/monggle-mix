@@ -1,0 +1,115 @@
+// 몽글믹스 — 게임 데이터 (몽글이, 조합표, 맵)
+// 새 몽글이·조합·맵을 더할 때는 이 파일만 고치면 된다.
+
+export const ELEM = {
+  fire:  { name: '불', color: '#ff7a59', icon: '🔥' },
+  water: { name: '물', color: '#4fb3ff', icon: '💧' },
+  grass: { name: '풀', color: '#5ccf6b', icon: '🌿' },
+};
+
+// 불 > 풀 > 물 > 불
+const BEATS = { fire: 'grass', grass: 'water', water: 'fire' };
+
+export function elemMult(atkElems, defElems) {
+  let best = 1;
+  for (const a of atkElems) {
+    for (const d of defElems) {
+      if (BEATS[a] === d) best = Math.max(best, 1.5);
+    }
+  }
+  if (best > 1) return best;
+  // 불리한지 확인 (모든 공격 속성이 상대에게 약할 때만)
+  let weak = true;
+  for (const a of atkElems) {
+    if (!defElems.some(d => BEATS[d] === a)) weak = false;
+  }
+  return weak ? 0.7 : 1;
+}
+
+// role: melee 근거리, ranged 원거리, tank 탱커, healer 힐러, aoe 범위
+// skill.type: strike 강타, proj 큰 탄, aoe 범위, heal 파티 회복, shield 보호막, slow 둔화, guard 자기 방어
+export const SPECIES = {
+  bulssi:   { name: '불씨콩', stage: 1, elems: ['fire'], role: 'melee',
+              hp: 60, atk: 9, range: 1.5, speed: 3.4,
+              skill: { name: '콩콩 박치기', type: 'strike', power: 3.0, cd: 7 } },
+  hotteok:  { name: '호떡냥', stage: 1, elems: ['fire'], role: 'ranged',
+              hp: 48, atk: 8, range: 5.5, speed: 3.2,
+              skill: { name: '뜨끈 호떡 던지기', type: 'proj', power: 3.2, cd: 8 } },
+  mulbang:  { name: '물방울토끼', stage: 1, elems: ['water'], role: 'ranged',
+              hp: 50, atk: 8, range: 5.5, speed: 3.6,
+              skill: { name: '물총 발사', type: 'proj', power: 3.0, cd: 7 } },
+  jogae:    { name: '조개말랑', stage: 1, elems: ['water'], role: 'tank',
+              hp: 90, atk: 6, range: 1.5, speed: 2.8,
+              skill: { name: '껍데기 막기', type: 'guard', power: 0.5, cd: 12, dur: 5 } },
+  saessak:  { name: '새싹버섯', stage: 1, elems: ['grass'], role: 'healer',
+              hp: 55, atk: 5, range: 4.5, speed: 3.0,
+              skill: { name: '포자 치유', type: 'heal', power: 0.3, cd: 10 } },
+  ggulbeol: { name: '꿀벌솜', stage: 1, elems: ['grass'], role: 'ranged',
+              hp: 46, atk: 8, range: 5.5, speed: 3.8,
+              skill: { name: '꿀침', type: 'slow', power: 2.2, cd: 8, dur: 4 } },
+
+  bulkkot:  { name: '불꽃냥', stage: 2, elems: ['fire'], role: 'aoe',
+              hp: 80, atk: 13, range: 1.8, speed: 3.6,
+              skill: { name: '불꽃 회오리', type: 'aoe', power: 2.6, cd: 9, radius: 3 } },
+  pado:     { name: '파도펭귄', stage: 2, elems: ['water'], role: 'tank',
+              hp: 130, atk: 9, range: 1.6, speed: 3.0,
+              skill: { name: '파도 밀치기', type: 'aoe', power: 2.0, cd: 10, radius: 3.2 } },
+  supgom:   { name: '숲곰', stage: 2, elems: ['grass'], role: 'healer',
+              hp: 110, atk: 9, range: 1.6, speed: 3.0,
+              skill: { name: '숲의 포옹', type: 'heal', power: 0.45, cd: 11 } },
+  gimmung:  { name: '김뭉게', stage: 2, elems: ['fire', 'water'], role: 'ranged',
+              hp: 72, atk: 12, range: 6, speed: 3.4,
+              skill: { name: '증기 안개', type: 'slow', power: 2.6, cd: 9, dur: 5, radius: 3 } },
+  hwabun:   { name: '화분여우', stage: 2, elems: ['fire', 'grass'], role: 'melee',
+              hp: 84, atk: 14, range: 1.6, speed: 4.0,
+              skill: { name: '꽃불 할퀴기', type: 'strike', power: 3.6, cd: 7 } },
+  ikki:     { name: '이끼거북', stage: 2, elems: ['water', 'grass'], role: 'tank',
+              hp: 140, atk: 8, range: 1.6, speed: 2.6,
+              skill: { name: '연잎 방패', type: 'shield', power: 0.5, cd: 14, dur: 6 } },
+};
+
+export const DEX_ORDER = ['bulssi', 'hotteok', 'mulbang', 'jogae', 'saessak', 'ggulbeol',
+  'bulkkot', 'pado', 'supgom', 'gimmung', 'hwabun', 'ikki'];
+
+// 조합: 정확한 짝 먼저, 없으면 속성 짝으로
+const EXACT = {
+  'bulssi+hotteok': 'bulkkot',
+  'jogae+mulbang': 'pado',
+  'ggulbeol+saessak': 'supgom',
+};
+const BY_ELEM = {
+  'fire+water': 'gimmung',
+  'fire+grass': 'hwabun',
+  'grass+water': 'ikki',
+};
+
+export function mixResult(spA, spB) {
+  if (spA === spB) return spA; // 같은 종 → 같은 종 (반짝이 확률 업)
+  const key = [spA, spB].sort().join('+');
+  if (EXACT[key]) return EXACT[key];
+  const a = SPECIES[spA], b = SPECIES[spB];
+  if (a.stage === 1 && b.stage === 1) {
+    const ek = [a.elems[0], b.elems[0]].sort().join('+');
+    if (BY_ELEM[ek]) return BY_ELEM[ek];
+  }
+  return null; // 아직 없는 조합 (3단계는 업데이트로 추가)
+}
+
+export const MIX_COST = 10;      // 반짝가루
+export const MIX_MIN_LV = 10;    // 재료 최소 레벨
+export const BOX_MAX = 20;       // 보관함 칸
+export const MAX_LV = 30;
+
+export function expToNext(lv) { return Math.round(14 + lv * lv * 2.2); }
+
+// 맵 구역 (x,z 평면). 마을이 가운데, 들판은 동쪽, 호숫가는 북쪽.
+export const ZONES = [
+  { id: 'village', name: '솥단지 마을', x: 0, z: 0, r: 13, safe: true },
+  { id: 'field', name: '말랑 들판', x: 34, z: 6, r: 20, lv: [1, 8],
+    spawns: ['bulssi', 'hotteok', 'saessak', 'ggulbeol'], count: 11 },
+  { id: 'lake', name: '물방울 호숫가', x: 4, z: -38, r: 20, lv: [6, 15],
+    spawns: ['mulbang', 'jogae', 'saessak'], count: 10 },
+];
+
+export const CAPTURE_RATE = 0.10;      // 기획서 기본 확률
+export const CAPTURE_RATE_NEW = 0.25;  // 도감에 없는 몽글이는 조금 더 잘 잡힘

@@ -1,0 +1,10 @@
+{
+  "name": "몽글믹스",
+  "short_name": "몽글믹스",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#cfeeff",
+  "theme_color": "#cfeeff",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

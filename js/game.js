@@ -1,0 +1,542 @@
+// 몽글믹스 — 게임 핵심 (주인공·몽글이·야생 몽글이·전투·포획)
+import * as THREE from '../lib/three.min.js';
+import { SPECIES, ZONES, elemMult, expToNext, MAX_LV, BOX_MAX, CAPTURE_RATE, CAPTURE_RATE_NEW } from './data.js';
+import { makeMonggle, makeHero, toon } from './models.js';
+import { clampToWorld, SPAWN, CAULDRON } from './world.js';
+
+const V = new THREE.Vector3();
+const rand = (a, b) => a + Math.random() * (b - a);
+const dist2 = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+
+export function heroStats(lv) { return { maxHp: Math.round(100 + lv * 12), atk: 10 + lv * 2.2 }; }
+export function petStats(m) {
+  const s = SPECIES[m.sp], k = 1 + (m.lv - 1) * 0.12, sh = m.shiny ? 1.1 : 1;
+  return { maxHp: Math.round(s.hp * k * sh), atk: s.atk * k * sh };
+}
+
+export class Game {
+  constructor({ scene, camera, state, ui, world, fxLayer }) {
+    Object.assign(this, { scene, camera, state, ui, world, fxLayer });
+    this.units = [];
+    this.projectiles = [];
+    this.drops = [];
+    this.time = 0;
+    this.buffAtk = 0; // 응원 남은 시간
+    this.heroSkillCd = 0;
+    this.lastZone = null;
+    this.marker = this.makeMarker();
+    this.spawnHero();
+    this.syncParty();
+    for (const z of ZONES) if (z.spawns) for (let i = 0; i < z.count; i++) this.spawnWild(z);
+    this.refreshVivid();
+  }
+
+  // ---------- 만들기 ----------
+  makeMarker() {
+    const m = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.5, 24),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2; m.position.y = 0.06; this.scene.add(m);
+    return m;
+  }
+
+  addUnit(u) {
+    this.scene.add(u.model.root);
+    u.bar = this.ui.makeBar(u);
+    this.units.push(u);
+    return u;
+  }
+
+  spawnHero() {
+    const st = heroStats(this.state.lv);
+    const model = makeHero(this.state.look);
+    model.root.position.set(SPAWN.x, 0, SPAWN.z);
+    this.hero = this.addUnit({
+      kind: 'hero', name: this.state.name, model, elems: [], range: 1.7, speed: 5,
+      hp: st.maxHp, maxHp: st.maxHp, atk: st.atk, atkCd: 0, target: null, moveTo: null,
+      buffs: {}, dead: false, face: 0,
+    });
+  }
+
+  makePet(m, slot) {
+    const s = SPECIES[m.sp], st = petStats(m);
+    const model = makeMonggle(m.sp, { shiny: m.shiny });
+    const h = this.hero.model.root.position;
+    model.root.position.set(h.x + rand(-1, 1), 0, h.z + rand(-1, 1));
+    return this.addUnit({
+      kind: 'pet', data: m, sp: m.sp, name: s.name, model, elems: s.elems, role: s.role,
+      range: s.range, speed: s.speed + 1, hp: st.maxHp, maxHp: st.maxHp, atk: st.atk,
+      atkCd: rand(0, 1), skillCd: 0, target: null, slot, buffs: {}, dead: false, reviveT: 0, face: 0,
+    });
+  }
+
+  partySize() { return this.state.lv >= 15 ? 3 : 2; }
+
+  // 저장된 파티 구성에 맞춰 화면 속 몽글이를 다시 만든다
+  syncParty() {
+    const want = this.state.party.slice(0, this.partySize())
+      .map(id => this.state.monggles.find(m => m.id === id)).filter(Boolean);
+    this.state.party = want.map(m => m.id);
+    for (const u of this.units.filter(u => u.kind === 'pet')) {
+      if (!want.includes(u.data)) this.removeUnit(u);
+    }
+    want.forEach((m, i) => {
+      let u = this.units.find(x => x.kind === 'pet' && x.data === m);
+      if (!u) u = this.makePet(m, i);
+      u.slot = i;
+    });
+    this.ui.renderParty();
+  }
+
+  removeUnit(u) {
+    this.scene.remove(u.model.root);
+    u.bar?.remove();
+    u.removed = true;
+    this.units = this.units.filter(x => x !== u);
+    for (const o of this.units) if (o.target === u) o.target = null;
+  }
+
+  spawnWild(zone, near) {
+    const sp = zone.spawns[Math.floor(Math.random() * zone.spawns.length)];
+    const s = SPECIES[sp];
+    const lv = Math.floor(rand(zone.lv[0], zone.lv[1] + 0.99));
+    const k = 1 + (lv - 1) * 0.12;
+    const model = makeMonggle(sp);
+    model.setColor(0);
+    let x, z, tries = 0;
+    do {
+      const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * zone.r * 0.92;
+      x = zone.x + Math.cos(a) * d; z = zone.z + Math.sin(a) * d;
+      tries++;
+    } while (tries < 20 && (Math.hypot(x, z) < 15 || (near && dist2({ x, z }, near) < 6)));
+    const p = clampToWorld({ x, z });
+    model.root.position.set(p.x, 0, p.z);
+    const hp = Math.round(s.hp * k * 0.85);
+    // 터치하기 쉽게 투명 판정 구
+    const hit = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
+    hit.position.y = 0.6; model.root.add(hit);
+    const u = this.addUnit({
+      kind: 'wild', sp, name: s.name, lv, model, elems: s.elems, role: s.role, zone,
+      range: Math.min(s.range, 4), speed: s.speed * 0.8, hp, maxHp: hp, atk: s.atk * k * 0.75,
+      atkCd: 1, target: null, home: new THREE.Vector3(p.x, 0, p.z), wanderT: rand(1, 4), wanderTo: null,
+      buffs: {}, dead: false, face: Math.random() * 6, hit,
+    });
+    hit.userData.unit = u;
+    return u;
+  }
+
+  // ---------- 입력 ----------
+  tapUnit(u) {
+    if (u.kind === 'wild' && !u.dead) { this.hero.target = u; this.hero.moveTo = null; this.flashMarker(u.model.root.position, 0xff8080); return; }
+    if (u.kind === 'friend') { this.befriend(u); }
+  }
+  tapGround(p, drag) {
+    if (this.hero.dead) return;
+    this.hero.moveTo = clampToWorld(new THREE.Vector3(p.x, 0, p.z));
+    this.hero.target = null;
+    if (!drag) this.flashMarker(this.hero.moveTo, 0xffffff);
+  }
+  flashMarker(p, color) {
+    this.marker.position.set(p.x, 0.06, p.z);
+    this.marker.material.color.setHex(color);
+    this.marker.material.opacity = 0.9;
+    this.marker.scale.setScalar(1);
+  }
+  pickables() { return this.units.filter(u => (u.kind === 'wild' && !u.dead) || u.kind === 'friend').map(u => u.hit); }
+
+  // ---------- 전투 ----------
+  enemyOf(u) { return u.kind === 'wild' ? ['hero', 'pet'] : ['wild']; }
+
+  nearestEnemy(u, maxD) {
+    let best = null, bd = maxD;
+    for (const o of this.units) {
+      if (o.dead || !this.enemyOf(u).includes(o.kind)) continue;
+      const d = dist2(u.model.root.position, o.model.root.position);
+      if (d < bd) { bd = d; best = o; }
+    }
+    return best;
+  }
+
+  damage(from, to, mult = 1, { silent = false } = {}) {
+    if (!to || to.dead) return 0;
+    let atk = from.atk * mult;
+    if (from.kind !== 'wild' && this.buffAtk > 0) atk *= 1.3;
+    const em = elemMult(from.elems.length ? from.elems : ['none'], to.elems.length ? to.elems : ['none']);
+    let dmg = atk * em * rand(0.9, 1.1);
+    if (to.buffs.guard > 0) dmg *= 0.5;
+    if (to.kind !== 'wild' && this.shieldT > 0) dmg *= 0.5;
+    dmg = Math.max(1, Math.round(dmg));
+    to.hp -= dmg;
+    to.hurtT = 0.15;
+    if (!silent) this.ui.floatText(to.model.root.position, '-' + dmg, em > 1 ? 'big' : (to.kind === 'wild' ? 'hit' : 'ouch'));
+    // 맞으면 반격
+    if (to.kind === 'wild' && !to.target) to.target = from;
+    if (to.kind === 'pet' && !to.target) to.target = from;
+    if (to.hp <= 0) this.kill(to, from);
+    return dmg;
+  }
+
+  shoot(from, to, mult, color, big = false) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(big ? 0.25 : 0.14, 10, 8),
+      toon(color, { emissive: color, emissiveIntensity: 0.6 }));
+    m.position.copy(from.model.root.position).add(V.set(0, 0.6, 0));
+    this.scene.add(m);
+    this.projectiles.push({ m, from, to, mult, speed: 12 });
+  }
+
+  attack(u, t) {
+    u.face = Math.atan2(t.model.root.position.x - u.model.root.position.x, t.model.root.position.z - u.model.root.position.z);
+    u.lunge = 0.25;
+    if (u.range > 3) {
+      const col = u.elems[0] === 'fire' ? 0xff9a4d : u.elems[0] === 'water' ? 0x6cc4ff : 0xa6e36a;
+      this.shoot(u, t, 1, col);
+    } else this.damage(u, t);
+  }
+
+  kill(u, killer) {
+    if (u.dead) return;
+    u.dead = true;
+    u.hp = 0;
+    if (u.kind === 'wild') {
+      this.reward(u);
+      const isNew = !this.state.dex[u.sp];
+      const rate = isNew ? CAPTURE_RATE_NEW : CAPTURE_RATE;
+      if (Math.random() < rate) this.makeFriend(u);
+      else { u.fadeT = 1; setTimeout(() => this.respawn(u), 9000); }
+      for (const o of this.units) if (o.target === u) o.target = null;
+    } else if (u.kind === 'pet') {
+      u.reviveT = 8;
+      u.target = null;
+      this.ui.toast(`${u.name}가 지쳐서 쉬고 있어요. 곧 돌아와요!`);
+    } else if (u.kind === 'hero') {
+      this.ui.toast('앗, 쓰러졌어요… 마을에서 다시 일어나요');
+      setTimeout(() => this.reviveHero(), 2200);
+    }
+  }
+
+  respawn(u) {
+    if (u.removed) return;
+    const z = u.zone;
+    this.removeUnit(u);
+    this.spawnWild(z, this.hero.model.root.position);
+  }
+
+  reviveHero() {
+    const h = this.hero;
+    h.dead = false; h.hp = h.maxHp; h.target = null; h.moveTo = null;
+    h.model.root.position.set(SPAWN.x, 0, SPAWN.z);
+    h.model.root.rotation.z = 0;
+    for (const p of this.units) if (p.kind === 'pet') {
+      p.dead = false; p.hp = p.maxHp; p.target = null; p.reviveT = 0; p.model.root.visible = true;
+      p.model.root.position.set(SPAWN.x + rand(-1.5, 1.5), 0, SPAWN.z + rand(-1, 1));
+    }
+  }
+
+  reward(u) {
+    const exp = Math.round(6 + u.lv * 3.5);
+    const dust = 1 + Math.floor(Math.random() * 3) + Math.floor(u.lv / 6);
+    this.state.dust += dust;
+    this.ui.floatText(u.model.root.position, `✦${dust}`, 'dust', 0.4);
+    this.gainHeroExp(exp);
+    for (const p of this.units) if (p.kind === 'pet' && !p.dead) this.gainPetExp(p, exp);
+    this.ui.renderTop();
+    this.ui.save();
+  }
+
+  gainHeroExp(n) {
+    const s = this.state;
+    if (s.lv >= MAX_LV) return;
+    s.exp += n;
+    while (s.lv < MAX_LV && s.exp >= expToNext(s.lv)) {
+      s.exp -= expToNext(s.lv); s.lv++;
+      const st = heroStats(s.lv);
+      this.hero.maxHp = st.maxHp; this.hero.atk = st.atk; this.hero.hp = st.maxHp;
+      this.ui.floatText(this.hero.model.root.position, `Lv ${s.lv}!`, 'lvup', 1.2);
+      if (s.lv === 15) { this.ui.toast('🎉 Lv15! 몽글이 칸이 하나 더 열렸어요'); this.ui.openBox(); }
+    }
+  }
+
+  gainPetExp(u, n) {
+    const m = u.data;
+    if (m.lv >= MAX_LV) return;
+    m.exp += n;
+    let up = false;
+    while (m.lv < MAX_LV && m.exp >= expToNext(m.lv)) { m.exp -= expToNext(m.lv); m.lv++; up = true; }
+    if (up) {
+      const st = petStats(m);
+      u.maxHp = st.maxHp; u.atk = st.atk; u.hp = st.maxHp;
+      this.ui.floatText(u.model.root.position, `Lv ${m.lv}!`, 'lvup', 1.0);
+    }
+  }
+
+  // ---------- 포획 ----------
+  makeFriend(u) {
+    u.kind = 'friend';
+    u.dead = false;
+    u.friendT = 20; // 20초 안에 터치
+    u.colorT = 0;
+    u.bar?.classList.add('friend');
+    this.ui.floatText(u.model.root.position, '친구 하고 싶어해요! 터치!', 'friend', 1.3);
+  }
+
+  befriend(u) {
+    const s = this.state;
+    if (s.monggles.length >= BOX_MAX) { this.ui.toast('보관함이 꽉 찼어요 (20칸). 조합으로 자리를 만들어요'); return; }
+    const m = { id: s.nextId++, sp: u.sp, lv: Math.max(1, u.lv - 2), exp: 0, shiny: false };
+    s.monggles.push(m);
+    const isNew = !s.dex[u.sp];
+    s.dex[u.sp] = (s.dex[u.sp] || 0) + 1;
+    this.ui.floatText(u.model.root.position, '♥', 'heart', 1.2);
+    this.ui.toast(isNew ? `✨ 새 친구! ${u.name}를 도감에 등록했어요` : `${u.name}가 친구가 됐어요!`);
+    // 파티에 빈자리가 있으면 바로 데려가기
+    if (s.party.length < this.partySize()) { s.party.push(m.id); this.syncParty(); }
+    const z = u.zone;
+    this.removeUnit(u);
+    setTimeout(() => this.spawnWild(z, this.hero.model.root.position), 6000);
+    this.refreshVivid();
+    this.ui.save();
+  }
+
+  refreshVivid() {
+    const n = Object.keys(this.state.dex).length;
+    this.world.setVivid(Math.min(1, n / 12));
+  }
+
+  // ---------- 스킬 ----------
+  useSkill(slot) {
+    const u = this.units.find(x => x.kind === 'pet' && x.slot === slot);
+    if (!u || u.dead) return false;
+    if (u.skillCd > 0) return false;
+    const sk = SPECIES[u.sp].skill;
+    const party = this.units.filter(x => (x.kind === 'pet' || x.kind === 'hero') && !x.dead);
+    if (sk.type === 'heal') {
+      for (const p of party) { const h = Math.round(p.maxHp * sk.power); p.hp = Math.min(p.maxHp, p.hp + h); this.ui.floatText(p.model.root.position, '+' + h, 'heal'); }
+    } else if (sk.type === 'guard') {
+      u.buffs.guard = sk.dur; u.target = u.target || this.nearestEnemy(u, 6);
+      // 주변 적을 끌어당김
+      for (const o of this.units) if (o.kind === 'wild' && !o.dead && dist2(o.model.root.position, u.model.root.position) < 6) o.target = u;
+      this.ui.floatText(u.model.root.position, '단단!', 'heal');
+    } else if (sk.type === 'shield') {
+      this.shieldT = sk.dur;
+      for (const p of party) this.ui.floatText(p.model.root.position, '🛡', 'heal');
+    } else {
+      const t = (this.hero.target && !this.hero.target.dead && this.hero.target.kind === 'wild') ? this.hero.target
+        : (u.target && !u.target.dead ? u.target : this.nearestEnemy(u, 9));
+      if (!t) { this.ui.toast('근처에 상대가 없어요'); return false; }
+      u.target = t;
+      if (sk.type === 'strike') { this.dashTo(u, t); this.damage(u, t, sk.power); }
+      else if (sk.type === 'proj') this.shoot(u, t, sk.power, 0xffe066, true);
+      else if (sk.type === 'aoe' || (sk.type === 'slow' && sk.radius)) {
+        const c = t.model.root.position;
+        for (const o of this.units) if (o.kind === 'wild' && !o.dead && dist2(o.model.root.position, c) < (sk.radius || 3)) {
+          if (sk.type === 'slow') { o.buffs.slow = sk.dur; this.damage(u, o, sk.power * 0.6); }
+          else this.damage(u, o, sk.power);
+        }
+        this.ui.ring(c, sk.type === 'slow' ? '#e9f2ff' : '#ffb36b', sk.radius || 3);
+      } else if (sk.type === 'slow') { t.buffs.slow = sk.dur; this.shoot(u, t, sk.power, 0xffe066); }
+    }
+    u.skillCd = sk.cd;
+    u.lunge = 0.4;
+    this.ui.floatText(u.model.root.position, sk.name, 'skill', 0.9);
+    return true;
+  }
+
+  heroSkill() {
+    if (this.heroSkillCd > 0 || this.hero.dead) return false;
+    this.buffAtk = 6;
+    this.heroSkillCd = 15;
+    for (const p of this.units) if ((p.kind === 'pet' || p.kind === 'hero') && !p.dead) this.ui.floatText(p.model.root.position, '힘내!', 'skill', 0.6);
+    return true;
+  }
+
+  dashTo(u, t) {
+    const a = u.model.root.position, b = t.model.root.position;
+    const d = dist2(a, b);
+    if (d > 1.2) { const k = (d - 1.1) / d; a.x += (b.x - a.x) * k; a.z += (b.z - a.z) * k; }
+  }
+
+  // ---------- 매 프레임 ----------
+  update(dt) {
+    this.time += dt;
+    if (this.buffAtk > 0) this.buffAtk -= dt;
+    if (this.heroSkillCd > 0) this.heroSkillCd -= dt;
+    if (this.shieldT > 0) this.shieldT -= dt;
+
+    const zone = this.zoneAt(this.hero.model.root.position);
+    if (zone !== this.lastZone) { this.lastZone = zone; this.ui.showZone(zone); }
+
+    for (const u of [...this.units]) {
+      if (u.removed) continue;
+      for (const k in u.buffs) if (u.buffs[k] > 0) u.buffs[k] -= dt;
+      if (u.kind === 'hero') this.updateHero(u, dt, zone);
+      else if (u.kind === 'pet') this.updatePet(u, dt, zone);
+      else if (u.kind === 'wild') this.updateWild(u, dt);
+      else if (u.kind === 'friend') this.updateFriend(u, dt);
+      this.animate(u, dt);
+    }
+    // 탄
+    for (const p of [...this.projectiles]) {
+      const tgt = p.to.model.root.position;
+      V.set(tgt.x, 0.6, tgt.z).sub(p.m.position);
+      const d = V.length();
+      if (d < 0.4 || p.to.dead || p.to.removed) {
+        if (!p.to.dead && !p.to.removed) this.damage(p.from, p.to, p.mult);
+        this.scene.remove(p.m); this.projectiles.splice(this.projectiles.indexOf(p), 1);
+      } else p.m.position.addScaledVector(V.normalize(), Math.min(d, p.speed * dt));
+    }
+    // 표시
+    if (this.marker.material.opacity > 0) { this.marker.material.opacity -= dt * 1.5; this.marker.scale.multiplyScalar(1 + dt * 0.8); }
+  }
+
+  zoneAt(p) {
+    for (const z of ZONES) if (Math.hypot(p.x - z.x, p.z - z.z) < z.r) return z;
+    return null;
+  }
+
+  moveToward(u, tx, tz, dt, stopAt = 0.1) {
+    const p = u.model.root.position;
+    const dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz);
+    if (d <= stopAt) { u.moving = false; return true; }
+    let sp = u.speed * (u.buffs.slow > 0 ? 0.5 : 1);
+    const step = Math.min(d - stopAt * 0.9, sp * dt);
+    p.x += dx / d * step; p.z += dz / d * step;
+    clampToWorld(p);
+    u.face = Math.atan2(dx, dz);
+    u.moving = true;
+    return false;
+  }
+
+  updateHero(h, dt, zone) {
+    if (h.dead) return;
+    if (zone && zone.safe) h.hp = Math.min(h.maxHp, h.hp + h.maxHp * 0.12 * dt);
+    else h.hp = Math.min(h.maxHp, h.hp + h.maxHp * 0.008 * dt);
+    h.atkCd -= dt;
+    // 나를 때리는 적이 있으면 자동으로 상대
+    if (!h.target && !h.moveTo) {
+      const att = this.units.find(o => o.kind === 'wild' && !o.dead && (o.target === h || o.target?.kind === 'pet') && dist2(o.model.root.position, h.model.root.position) < 7);
+      if (att) h.target = att;
+    }
+    if (h.target && (h.target.dead || h.target.removed || h.target.kind !== 'wild')) h.target = null;
+    if (h.target) {
+      const tp = h.target.model.root.position;
+      if (this.moveToward(h, tp.x, tp.z, dt, h.range) && h.atkCd <= 0) { this.attack(h, h.target); h.atkCd = 0.75; }
+    } else if (h.moveTo) {
+      if (this.moveToward(h, h.moveTo.x, h.moveTo.z, dt, 0.15)) h.moveTo = null;
+    } else h.moving = false;
+  }
+
+  updatePet(u, dt, zone) {
+    const hp = this.hero.model.root.position;
+    if (u.dead) {
+      u.model.root.visible = false;
+      u.reviveT -= dt;
+      if (u.reviveT <= 0) {
+        u.dead = false; u.hp = Math.round(u.maxHp * 0.6); u.model.root.visible = true;
+        u.model.root.position.set(hp.x + rand(-1, 1), 0, hp.z + rand(-1, 1));
+      }
+      return;
+    }
+    if (zone && zone.safe) u.hp = Math.min(u.maxHp, u.hp + u.maxHp * 0.12 * dt);
+    else u.hp = Math.min(u.maxHp, u.hp + u.maxHp * 0.01 * dt);
+    u.atkCd -= dt; if (u.skillCd > 0) u.skillCd -= dt;
+    const dHero = dist2(u.model.root.position, hp);
+    // 주인공이 멀어지면 무조건 따라감
+    if (dHero > 14) u.target = null;
+    if (dHero > 22) { u.model.root.position.set(hp.x + rand(-1, 1), 0, hp.z + rand(-1, 1)); }
+    // 힐러: 다친 친구 회복
+    if (u.role === 'healer' && u.atkCd <= 0) {
+      const hurt = this.units.filter(o => (o.kind === 'pet' || o.kind === 'hero') && !o.dead && o.hp < o.maxHp * 0.7)
+        .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
+      if (hurt && dist2(hurt.model.root.position, u.model.root.position) < 6) {
+        const h = Math.round(u.atk * 1.6); hurt.hp = Math.min(hurt.maxHp, hurt.hp + h);
+        this.ui.floatText(hurt.model.root.position, '+' + h, 'heal'); u.atkCd = 2.2; u.lunge = 0.2; return;
+      }
+    }
+    // 체력이 낮으면 뒤로 빠짐
+    if (u.hp < u.maxHp * 0.3 && u.target) { u.target = null; u.retreatT = 3; }
+    if (u.retreatT > 0) u.retreatT -= dt;
+    // 목표: 주인공 목표 우선
+    const ht = this.hero.target;
+    if (ht && !ht.dead && ht.kind === 'wild' && !(u.retreatT > 0)) u.target = ht;
+    if (u.target && (u.target.dead || u.target.removed || u.target.kind !== 'wild')) u.target = null;
+    if (u.target) {
+      const tp = u.target.model.root.position;
+      if (this.moveToward(u, tp.x, tp.z, dt, u.range * 0.9) && u.atkCd <= 0) {
+        this.attack(u, u.target); u.atkCd = u.role === 'healer' ? 1.6 : 1.1;
+      }
+    } else {
+      // 주인공 뒤쪽 졸졸
+      const back = this.hero.face + Math.PI + (u.slot - (this.partySize() - 1) / 2) * 0.9;
+      const fx = hp.x + Math.sin(back) * 1.6, fz = hp.z + Math.cos(back) * 1.6;
+      this.moveToward(u, fx, fz, dt, 0.5);
+    }
+  }
+
+  updateWild(u, dt) {
+    if (u.dead) {
+      if (u.fadeT > 0) { u.fadeT -= dt; u.model.root.scale.setScalar(Math.max(0.01, u.fadeT)); if (u.fadeT <= 0) u.model.root.visible = false; }
+      return;
+    }
+    u.atkCd -= dt;
+    if (u.target && (u.target.dead || u.target.removed)) u.target = null;
+    const p = u.model.root.position;
+    if (u.target) {
+      // 너무 멀리 끌려가면 집으로
+      if (p.distanceTo(u.home) > 15) { u.target = null; u.returning = true; }
+      else {
+        const tp = u.target.model.root.position;
+        if (this.moveToward(u, tp.x, tp.z, dt, u.range * 0.9) && u.atkCd <= 0) { this.attack(u, u.target); u.atkCd = 1.5; }
+        return;
+      }
+    }
+    if (u.returning) {
+      u.hp = Math.min(u.maxHp, u.hp + u.maxHp * 0.3 * dt);
+      if (this.moveToward(u, u.home.x, u.home.z, dt, 0.5)) u.returning = false;
+      return;
+    }
+    u.hp = Math.min(u.maxHp, u.hp + u.maxHp * 0.02 * dt);
+    u.wanderT -= dt;
+    if (u.wanderT <= 0) {
+      u.wanderT = rand(2, 5);
+      u.wanderTo = Math.random() < 0.6 ? clampToWorld(new THREE.Vector3(u.home.x + rand(-3, 3), 0, u.home.z + rand(-3, 3))) : null;
+    }
+    if (u.wanderTo) { const sp = u.speed; u.speed = sp * 0.35; if (this.moveToward(u, u.wanderTo.x, u.wanderTo.z, dt, 0.2)) u.wanderTo = null; u.speed = sp; }
+    else u.moving = false;
+  }
+
+  updateFriend(u, dt) {
+    u.colorT = Math.min(1, u.colorT + dt * 1.2);
+    u.model.setColor(u.colorT);
+    u.friendT -= dt;
+    u.moving = false;
+    // 주인공 쪽을 바라보며 깡충
+    const hp = this.hero.model.root.position, p = u.model.root.position;
+    u.face = Math.atan2(hp.x - p.x, hp.z - p.z);
+    if (Math.random() < dt * 3) this.ui.sparkle(p);
+    if (u.friendT <= 0) {
+      this.ui.toast(`${u.name}가 숲으로 돌아갔어요`);
+      const z = u.zone; this.removeUnit(u); setTimeout(() => this.spawnWild(z, hp), 5000);
+    }
+  }
+
+  animate(u, dt) {
+    const m = u.model, t = this.time + (u.model.root.id % 10);
+    // 방향 부드럽게
+    let df = u.face - m.root.rotation.y;
+    df = Math.atan2(Math.sin(df), Math.cos(df));
+    m.root.rotation.y += df * Math.min(1, dt * 10);
+    if (u.dead && u.kind === 'hero') { m.root.rotation.z = Math.min(1.4, m.root.rotation.z + dt * 4); return; }
+    let y = 0, sx = 1, sy = 1;
+    if (u.moving) { const h = Math.abs(Math.sin(t * 11)); y = h * 0.22; sy = 1 + h * 0.08; sx = 1 - h * 0.04; }
+    else { const b = Math.sin(t * 2.6); sy = 1 + b * 0.04; sx = 1 - b * 0.025; }
+    if (u.kind === 'friend') { const h = Math.abs(Math.sin(t * 6)); y = h * 0.35; }
+    if (u.lunge > 0) { u.lunge -= dt; m.body.position.z = Math.sin(u.lunge * 12) * 0.25; } else m.body.position.z = 0;
+    m.body.position.y = y;
+    m.body.scale.set(sx, sy, sx);
+    if (u.sp === 'ggulbeol' || u.sp === 'gimmung') m.body.position.y += 0.15 + Math.sin(t * 3) * 0.06;
+    m.body.traverse(o => { if (o.userData.wing) o.rotation.y = Math.sin(t * 30) * 0.5 * o.userData.wing; if (o.userData.puff) o.position.y = o.userData.puff + ((t * 0.4) % 0.3); });
+    if (u.hurtT > 0) { u.hurtT -= dt; m.flash(true); if (u.hurtT <= 0) m.flash(false); }
+    m.shadow.scale.setScalar(1 - y * 0.6);
+  }
+
+  nearCauldron() { return dist2(this.hero.model.root.position, CAULDRON) < 4; }
+}
