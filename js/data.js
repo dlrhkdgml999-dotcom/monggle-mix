@@ -185,3 +185,43 @@ export const SHOP = [
   { id: 'potion', name: '체력 물약', icon: '🧪', price: 5, desc: '주인공과 몽글이 체력을 절반 채워요' },
   { id: 'candy', name: '친구 사탕', icon: '🍬', price: 12, desc: '1분 동안 친구가 될 확률이 2배! (바로 먹어요)' },
 ];
+
+// 장비 (무기·옷·목걸이)
+export const TIERS = [
+  { name: '보통', color: '#9a8fb0', mult: 1 },
+  { name: '고급', color: '#3fbf5f', mult: 1.5 },
+  { name: '희귀', color: '#3f8fff', mult: 2.2 },
+  { name: '전설', color: '#b04fff', mult: 3.2 },
+];
+export const EQUIP = {
+  weapon: { name: '무기', icon: '🗡️', prefix: ['나무', '반짝 철', '별빛', '무지개'] },
+  armor: { name: '옷', icon: '👕', prefix: ['포근한', '단단한', '구름', '무지개'] },
+  charm: { name: '목걸이', icon: '📿', prefix: ['도토리', '조개', '달빛', '무지개'] },
+};
+export const ENHANCE_RATE = [0.95, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]; // +1 ~ +10
+export const enhanceCost = it => 5 * (it.plus + 1) * (it.tier + 1);
+export const INV_MAX = 30;
+
+export function rollEquip(lv, boss = false) {
+  const r = Math.random() + (boss ? 0.35 : 0);
+  const tier = r > 0.99 ? 3 : r > 0.92 ? 2 : r > 0.7 ? 1 : 0;
+  const types = Object.keys(EQUIP), type = types[Math.floor(Math.random() * types.length)];
+  const m = TIERS[tier].mult;
+  const it = { type, tier, lv, plus: 0, name: `${EQUIP[type].prefix[tier]} ${EQUIP[type].name}` };
+  if (type === 'weapon') it.atk = Math.round((2 + lv * 0.6) * m);
+  if (type === 'armor') it.hp = Math.round((10 + lv * 4) * m);
+  if (type === 'charm') { it.atk = Math.round((1 + lv * 0.25) * m); it.hp = Math.round((5 + lv * 1.5) * m); }
+  return it;
+}
+export function itemStat(it) {
+  const k = 1 + it.plus * 0.1;
+  return { atk: Math.round((it.atk || 0) * k), hp: Math.round((it.hp || 0) * k) };
+}
+export function equipBonus(s) {
+  const b = { atk: 0, hp: 0 };
+  for (const id of Object.values(s.eq || {})) {
+    const it = (s.inv || []).find(x => x.id === id);
+    if (it) { const st = itemStat(it); b.atk += st.atk; b.hp += st.hp; }
+  }
+  return b;
+}

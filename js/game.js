@@ -1,6 +1,6 @@
 // 몽글믹스 — 게임 핵심 (주인공·몽글이·야생 몽글이·전투·포획)
 import * as THREE from '../lib/three.min.js';
-import { SPECIES, ZONES, elemMult, expToNext, MAX_LV, BOX_MAX, CAPTURE_RATE, CAPTURE_RATE_NEW, QUESTS, QUEST_REWARD, JOBS } from './data.js';
+import { SPECIES, ZONES, elemMult, expToNext, MAX_LV, BOX_MAX, CAPTURE_RATE, CAPTURE_RATE_NEW, QUESTS, QUEST_REWARD, JOBS, rollEquip, equipBonus, INV_MAX, TIERS } from './data.js';
 import { makeMonggle, makeHero, toon } from './models.js';
 import { clampToWorld, SPAWN, CAULDRON } from './world.js';
 import { sfx } from './sfx.js';
@@ -49,6 +49,8 @@ export class Game {
     for (const z of ZONES) if (z.spawns) for (let i = 0; i < z.count; i++) this.spawnWild(z);
     this.bossT = 0;
     this.spawnBoss();
+    this.spawnNpc('shop', '🏪 상점 주인 몽실', 'boy', 'pirate', 5.5, 3.6, -0.8);
+    this.spawnNpc('mix', '🍲 믹스 할머니', 'girl', 'mage', -2.6, -3.6, 0.7);
     this.refreshVivid();
   }
 
@@ -100,7 +102,7 @@ export class Game {
   spawnHero() {
     const job = this.state.job || 'mage';
     const J = JOBS[job];
-    const st = heroStats(this.state.lv, job);
+    const st = this.heroFullStats();
     const model = makeHero(this.state.look, job);
     model.root.position.set(SPAWN.x, 0, SPAWN.z);
     this.hero = this.addUnit({
@@ -123,6 +125,31 @@ export class Game {
       range: s.range, speed: s.speed + 1, hp: st.maxHp, maxHp: st.maxHp, atk: st.atk,
       atkCd: rand(0, 1), skillCd: 0, target: null, slot, buffs: {}, dead: false, reviveT: 0, face: 0,
     });
+  }
+
+  heroFullStats() {
+    const st = heroStats(this.state.lv, this.state.job || 'mage'), b = equipBonus(this.state);
+    return { maxHp: st.maxHp + b.hp, atk: st.atk + b.atk };
+  }
+  // 장비를 바꾸거나 강화하면 능력치 다시 계산
+  refreshHero() {
+    const h = this.hero, st = this.heroFullStats(), ratio = h.hp / h.maxHp;
+    h.maxHp = st.maxHp; h.atk = st.atk; h.hp = Math.max(1, Math.round(st.maxHp * ratio));
+  }
+
+  // 장비 드롭
+  dropEquip(u) {
+    const s = this.state;
+    if (!u.boss && Math.random() > 0.08) return;
+    s.inv = s.inv || [];
+    if (s.inv.length >= INV_MAX) { this.ui.toast('장비 가방이 꽉 찼어요 (30칸)'); return; }
+    const it = rollEquip(u.lv, u.boss);
+    it.id = s.nextItem = (s.nextItem || 1) + 1;
+    s.inv.push(it);
+    const T = TIERS[it.tier];
+    this.ui.toast(`<b style="color:${T.color}">[${T.name}] ${it.name}</b> 획득!`);
+    this.burst(u.model.root.position, parseInt(T.color.slice(1), 16), it.tier >= 2 ? 18 : 8);
+    if (it.tier >= 2) sfx.friend();
   }
 
   // 직업 바꾸기 (모습·능력치 다시 만들기)
@@ -191,6 +218,25 @@ export class Game {
     });
     hit.userData.unit = u;
     return u;
+  }
+
+  // 마을 NPC
+  spawnNpc(role, name, look, job, x, z, face) {
+    const model = makeHero(look, job);
+    model.root.position.set(x, 0, z);
+    const hit = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
+    hit.position.y = 0.8; model.root.add(hit);
+    const u = this.addUnit({ kind: 'npc', role, name, model, face, hit, buffs: {}, elems: [] });
+    hit.userData.unit = u;
+    return u;
+  }
+  openNpc(u) {
+    this.hero.pendingNpc = null;
+    this.hero.face = Math.atan2(u.model.root.position.x - this.hero.model.root.position.x, u.model.root.position.z - this.hero.model.root.position.z);
+    u.face = Math.atan2(this.hero.model.root.position.x - u.model.root.position.x, this.hero.model.root.position.z - u.model.root.position.z);
+    u.atkT = ATTACK_TIME;
+    sfx.emote();
+    if (u.role === 'shop') this.ui.openShop(); else this.ui.openMix();
   }
 
   // 보스 대왕버섯 (들판 동쪽 숲 끝, 쓰러지면 10분 뒤 다시)
@@ -329,6 +375,7 @@ export class Game {
       for (const p of this.units) if (p.kind === 'pet' && !p.dead) this.gainPetExp(p, 320);
       this.ui.floatText(u.model.root.position, '✦40', 'lvup', 1.4);
       this.ui.toast('🎉 둘이서 대왕버섯을 물리쳤어요! 반짝가루 40개');
+      this.dropEquip(u);
       sfx.levelUp(); this.burst(u.model.root.position, 0xfff27a, 24);
       u.fadeT = 1; this.ui.renderTop(); this.ui.save();
       return;
@@ -398,6 +445,12 @@ export class Game {
 
   // ---------- 입력 ----------
   tapUnit(u) {
+    if (u.kind === 'npc') {
+      const d = dist2(u.model.root.position, this.hero.model.root.position);
+      if (d < 2.6) this.openNpc(u);
+      else { this.hero.moveTo = clampToWorld(new THREE.Vector3(u.model.root.position.x, 0, u.model.root.position.z + 1.4)); this.hero.target = null; this.hero.pendingNpc = u; }
+      return;
+    }
     if (u.kind === 'wild' && !u.dead) { sfx.tap(); this.hero.target = u; this.hero.moveTo = null; this.flashMarker(u.model.root.position, 0xff8080); return; }
     if (u.kind === 'friend') { this.befriend(u); }
   }
@@ -428,7 +481,7 @@ export class Game {
     this.marker.material.opacity = 0.9;
     this.marker.scale.setScalar(1);
   }
-  pickables() { return this.units.filter(u => (u.kind === 'wild' && !u.dead) || u.kind === 'friend').map(u => u.hit); }
+  pickables() { return this.units.filter(u => (u.kind === 'wild' && !u.dead) || u.kind === 'friend' || u.kind === 'npc').map(u => u.hit); }
 
   // ---------- 전투 ----------
   enemyOf(u) { return u.kind === 'wild' ? ['hero', 'pet', 'ally'] : ['wild']; }
@@ -554,6 +607,7 @@ export class Game {
       for (const p of this.units) if (p.kind === 'pet' && !p.dead) this.gainPetExp(p, 320);
       this.ui.floatText(u.model.root.position, '✦40', 'lvup', 1.4);
       this.ui.toast('🎉 대왕버섯을 물리쳤어요! 반짝가루 40개');
+      this.dropEquip(u);
       sfx.levelUp(); this.burst(u.model.root.position, 0xfff27a, 24);
       u.fadeT = 1; this.bossT = 600;
       for (const o of this.units) if (o.target === u) o.target = null;
@@ -603,6 +657,7 @@ export class Game {
     this.state.dust += dust;
     this.state.kills = (this.state.kills || 0) + 1;
     this.dropGems(u.model.root.position, Math.min(6, dust));
+    this.dropEquip(u);
     this.ui.floatText(u.model.root.position, `✦${dust}`, 'dust', 0.4);
     this.gainHeroExp(exp);
     for (const p of this.units) if (p.kind === 'pet' && !p.dead) this.gainPetExp(p, exp);
@@ -616,7 +671,7 @@ export class Game {
     s.exp += n;
     while (s.lv < MAX_LV && s.exp >= expToNext(s.lv)) {
       s.exp -= expToNext(s.lv); s.lv++;
-      const st = heroStats(s.lv, s.job);
+      const st = this.heroFullStats();
       this.hero.maxHp = st.maxHp; this.hero.atk = st.atk; this.hero.hp = st.maxHp;
       this.ui.floatText(this.hero.model.root.position, `Lv ${s.lv}!`, 'lvup', 1.2);
       sfx.levelUp(); this.burst(this.hero.model.root.position, 0xfff27a, 14);
@@ -828,6 +883,7 @@ export class Game {
       else if (u.kind === 'wild' && u.mirror) this.updateMirror(u, dt);
       else if (u.kind === 'wild') this.updateWild(u, dt);
       else if (u.kind === 'ally') continue;
+      else if (u.kind === 'npc') { u.moving = false; }
       else if (u.kind === 'friend') this.updateFriend(u, dt);
       this.animate(u, dt);
     }
@@ -934,7 +990,7 @@ export class Game {
       const tp = h.target.model.root.position;
       if (this.moveToward(h, tp.x, tp.z, dt, h.range + (h.target.radius || 0)) && h.atkCd <= 0) { this.attack(h, h.target); h.atkCd = h.atkRate || 0.75; }
     } else if (h.moveTo) {
-      if (this.moveToward(h, h.moveTo.x, h.moveTo.z, dt, 0.15)) h.moveTo = null;
+      if (this.moveToward(h, h.moveTo.x, h.moveTo.z, dt, 0.15)) { h.moveTo = null; if (h.pendingNpc) this.openNpc(h.pendingNpc); }
     } else h.moving = false;
   }
 

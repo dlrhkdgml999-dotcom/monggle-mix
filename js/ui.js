@@ -1,6 +1,6 @@
 // 몽글믹스 — 화면 UI (상단 정보, 스킬 버튼, 가방, 도감, 믹스 솥)
 import * as THREE from '../lib/three.min.js';
-import { SPECIES, ELEM, DEX_ORDER, mixResult, mixMinLv, MIX_COST, MIX_MIN_LV, BOX_MAX, expToNext, MAX_LV, QUESTS, JOBS, SHOP } from './data.js';
+import { SPECIES, ELEM, DEX_ORDER, mixResult, mixMinLv, MIX_COST, MIX_MIN_LV, BOX_MAX, expToNext, MAX_LV, QUESTS, JOBS, SHOP, EQUIP, TIERS, ENHANCE_RATE, enhanceCost, itemStat, INV_MAX } from './data.js';
 import { BOUNDS } from './world.js';
 import { makeMonggle, makeHero } from './models.js';
 import { sfx, isMuted, setMuted } from './sfx.js';
@@ -50,6 +50,7 @@ export function icon(sp, shiny = false) {
   return iconCache[key];
 }
 
+const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const elemTags = sp => SPECIES[sp].elems.map(e => `<span class="el" style="--c:${ELEM[e].color}">${ELEM[e].icon}${ELEM[e].name}</span>`).join('');
 // 받침에 맞는 조사 (하은과 / 광희와)
 export const josa = (w, a, b) => { const c = (w || '').charCodeAt((w || '').length - 1); return w + (c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 ? a : b); };
@@ -272,7 +273,7 @@ export class UI {
   // ---------- 머리 위 체력바 ----------
   makeBar(u) {
     if (u.kind === 'hero' || u.kind === 'pet' || u.kind === 'ally') return null;
-    const b = h('div', 'ubar ' + u.kind, `<span class="nm">${u.kind === 'wild' ? `Lv${u.lv} ` : ''}${u.name}</span><div class="bar hp sm"><i></i></div>`);
+    const b = h('div', 'ubar ' + u.kind, `<span class="nm">${u.kind === 'wild' ? `Lv${u.lv} ` : ''}${u.name}</span>${u.kind === 'npc' ? '' : '<div class="bar hp sm"><i></i></div>'}`);
     this.bars.appendChild(b);
     return b;
   }
@@ -283,6 +284,12 @@ export class UI {
   placeBar(u) {
     if (!u.bar) return;
     if (u.boss) { u.bar.style.display = 'none'; return; }
+    if (u.kind === 'npc') {
+      const s2 = this.project(u.model.root.position, 2.3);
+      u.bar.style.display = s2.vis ? '' : 'none';
+      u.bar.style.transform = `translate(${s2.x}px, ${s2.y}px)`;
+      return;
+    }
     const show = !u.dead && (u.kind === 'friend' || (u.kind === 'wild' && (u.hp < u.maxHp || this.game.hero.target === u)));
     const s = this.project(u.model.root.position, u.sp && SPECIES[u.sp].stage === 2 ? 1.75 : 1.45);
     if (!show || !s.vis) { u.bar.style.display = 'none'; return; }
@@ -468,7 +475,7 @@ export class UI {
   }
   partnerChat(name, text) {
     if (this.partnerModel) this.bubble(this.partnerModel.root, text);
-    this.toast(`💬 ${name}: ${text}`);
+    this.toast(`💬 ${esc(name)}: ${esc(text)}`);
   }
 
   // ---------- 감정표현 ----------
@@ -526,7 +533,7 @@ export class UI {
   // ---------- 패널 ----------
   openPanel(title, cls = '') {
     const p = $('#panel'); p.classList.remove('hidden'); p.className = cls;
-    const b = $('#panel .body'); b.innerHTML = `<h2>${title}</h2>`;
+    const b = $('#panel .body'); b.innerHTML = `<h2>${title}</h2>`; b.onclick = null;
     this.panelOpen = true;
     return b;
   }
@@ -540,9 +547,88 @@ export class UI {
       <div class="sub"><span class="lv">Lv ${m.lv}</span>${elemTags(m.sp)}</div>${inParty ? '<span class="badge">함께</span>' : ''}${extra}</div>`;
   }
 
+  bagTabs(b, on) {
+    const t = h('div', 'tabs', `<button data-t="mon" class="${on === 'mon' ? 'on' : ''}">🐣 몽글이</button><button data-t="eq" class="${on === 'eq' ? 'on' : ''}">🗡️ 장비 <small>${(this.state.inv || []).length}</small></button>`);
+    t.onclick = e => { const x = e.target.closest('button'); if (x) (x.dataset.t === 'eq' ? this.openEquip() : this.openBox()); };
+    b.querySelector('h2').after(t);
+  }
+
+  // ---------- 장비 ----------
+  itemCard(it, eqd) {
+    const T = TIERS[it.tier], E = EQUIP[it.type], st = itemStat(it);
+    return `<div class="icard ${eqd ? 'eqd' : ''}" data-id="${it.id}" style="--tc:${T.color}">
+      <span class="ii">${E.icon}</span><b>${it.plus ? `+${it.plus} ` : ''}${esc(it.name)}</b>
+      <small>${st.atk ? `공격 +${st.atk}` : ''}${st.atk && st.hp ? ' · ' : ''}${st.hp ? `체력 +${st.hp}` : ''}</small>${eqd ? '<span class="badge">장착</span>' : ''}</div>`;
+  }
+  openEquip() {
+    const s = this.state; s.inv = s.inv || []; s.eq = s.eq || {};
+    const b = this.openPanel(`🎒 가방 <small>장비 ${s.inv.length}/${INV_MAX}칸</small>`);
+    this.bagTabs(b, 'eq');
+    const g = this.game, st = g.heroFullStats();
+    const slots = h('div', 'eqslots');
+    slots.innerHTML = Object.entries(EQUIP).map(([k, E]) => {
+      const it = s.inv.find(x => x.id === s.eq[k]);
+      return it ? this.itemCard(it, true) : `<div class="icard empty"><span class="ii">${E.icon}</span><b>${E.name} 없음</b><small>몬스터가 가끔 떨어뜨려요</small></div>`;
+    }).join('') + `<div class="mystat">❤️ ${st.maxHp} · ⚔️ ${Math.round(st.atk)}</div>`;
+    b.appendChild(slots);
+    const grid = h('div', 'grid igrid');
+    const list = s.inv.filter(it => !Object.values(s.eq).includes(it.id)).sort((a, c) => c.tier - a.tier || c.plus - a.plus);
+    grid.innerHTML = list.map(it => this.itemCard(it, false)).join('') || '<p class="hint">아직 장비가 없어요. 사냥하다 보면 떨어져요!</p>';
+    b.appendChild(grid);
+    b.onclick = e => { const c = e.target.closest('.icard[data-id]'); if (c) this.openItem(+c.dataset.id); };
+  }
+  openItem(id) {
+    const s = this.state, it = s.inv.find(x => x.id === id); if (!it) return;
+    const T = TIERS[it.tier], E = EQUIP[it.type], st = itemStat(it);
+    const eqd = s.eq[it.type] === id;
+    const rate = it.plus < 10 ? ENHANCE_RATE[it.plus] : 0, cost = enhanceCost(it);
+    const b = this.openPanel(`<span style="color:${T.color}">[${T.name}]</span> ${it.plus ? '+' + it.plus + ' ' : ''}${esc(it.name)}`);
+    b.onclick = null;
+    b.insertAdjacentHTML('beforeend', `
+      <div class="idetail" style="--tc:${T.color}"><div class="bigi">${E.icon}<i>${it.plus ? '+' + it.plus : ''}</i></div>
+      <div class="info">
+        <div class="kv"><span>종류</span><b>${E.name} · Lv${it.lv}</b></div>
+        ${st.atk ? `<div class="kv"><span>공격력</span><b>+${st.atk}</b></div>` : ''}
+        ${st.hp ? `<div class="kv"><span>체력</span><b>+${st.hp}</b></div>` : ''}
+        <div class="kv"><span>강화 (+${it.plus} → +${it.plus + 1})</span><b>${it.plus < 10 ? `성공 ${Math.round(rate * 100)}% · ✦${cost}` : '최대 강화!'}</b></div>
+        <div class="btns">
+          <button class="btn" id="iEq">${eqd ? '벗기' : '장착'}</button>
+          <button class="btn enh" id="iEn" ${it.plus >= 10 ? 'disabled' : ''}>✨ 강화</button>
+          <button class="btn ghost" id="iSell">분해 (✦${2 * (it.tier + 1) + it.plus})</button>
+          <button class="btn ghost" id="iBack">←</button>
+        </div>
+      </div></div>`);
+    $('#iBack', b).onclick = () => this.openEquip();
+    $('#iEq', b).onclick = () => {
+      if (eqd) delete s.eq[it.type]; else s.eq[it.type] = id;
+      this.game.refreshHero(); this.save(); sfx.tap(); this.openEquip();
+    };
+    $('#iSell', b).onclick = () => {
+      if (eqd) delete s.eq[it.type];
+      s.inv = s.inv.filter(x => x !== it);
+      s.dust += 2 * (it.tier + 1) + it.plus;
+      this.game.refreshHero(); this.save(); sfx.dust(); this.renderTop(); this.openEquip();
+    };
+    $('#iEn', b).onclick = () => {
+      if (it.plus >= 10) return;
+      if (s.dust < cost) { this.toast('반짝가루가 모자라요'); this.shake($('#iEn', b)); return; }
+      s.dust -= cost;
+      const btn = $('#iEn', b); btn.disabled = true; btn.textContent = '두근두근…';
+      sfx.bubble();
+      setTimeout(() => {
+        const ok = Math.random() < rate;
+        if (ok) { it.plus++; sfx.born(it.plus >= 7); this.toast(`✨ 강화 성공! +${it.plus}`); this.game.burst(this.game.hero.model.root.position, 0xfff27a, 14); }
+        else { sfx.error(); this.toast('💦 강화 실패… 장비는 그대로예요'); }
+        this.game.refreshHero(); this.save(); this.renderTop(); this.openItem(id);
+      }, 900);
+    };
+  }
+
   openBox() {
     const s = this.state, g = this.game;
     const b = this.openPanel(`🎒 가방 <small>${s.monggles.length}/${BOX_MAX}칸 · 데리고 다니기 ${s.party.length}/${g.partySize()}</small>`);
+    this.bagTabs(b, 'mon');
+    b.onclick = null;
     const grid = h('div', 'grid');
     grid.innerHTML = s.monggles.map(m => this.monCard(m)).join('');
     b.appendChild(grid);

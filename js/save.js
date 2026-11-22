@@ -138,5 +138,8 @@ export function normalize(s) {
   s.dex = s.dex || {};
   s.dust = s.dust || 0;
   s.items = s.items || { potion: 3 };
+  s.inv = Array.isArray(s.inv) ? s.inv.filter(Boolean) : Object.values(s.inv || {});
+  s.eq = s.eq || {};
+  s.nextItem = s.nextItem || 1;
   return s;
 }

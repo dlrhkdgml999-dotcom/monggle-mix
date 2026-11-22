@@ -290,3 +290,25 @@ button { font-family: inherit; color: inherit; border: 0; cursor: pointer; }
 #stick { position: fixed; width: 110px; height: 110px; margin: -55px 0 0 -55px; border-radius: 50%; background: rgba(255, 255, 255, .25); border: 3px solid rgba(255, 255, 255, .6); z-index: 4; pointer-events: none; }
 #stick i { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: rgba(255, 255, 255, .85); box-shadow: 0 3px 10px rgba(90, 60, 130, .3); }
 @media (max-height: 420px) { .atkBtn { width: 68px; height: 68px; bottom: 82px; font-size: 26px; } .autoBtn { bottom: 94px; right: calc(88px + var(--safe-r)); } }
+
+.tabs { display: flex; gap: 6px; margin: -4px 0 10px; }
+.tabs button { background: #f4eefc; border-radius: 12px; padding: 6px 14px; font-size: 15px; }
+.tabs button.on { background: #9f78ff; color: #fff; }
+.eqslots { display: grid; grid-template-columns: repeat(3, 1fr) auto; gap: 8px; align-items: center; margin-bottom: 10px; }
+.mystat { background: #fff4f8; border-radius: 12px; padding: 8px 10px; font-size: 14px; white-space: nowrap; }
+.icard { position: relative; background: #fff; border-radius: 14px; padding: 6px 8px 6px 44px; min-height: 52px; border: 2px solid var(--tc, #eee); box-shadow: 0 2px 8px rgba(90, 60, 130, .08); display: flex; flex-direction: column; justify-content: center; }
+.icard .ii { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 26px; }
+.icard b { font-size: 13px; color: var(--tc); }
+.icard small { font-size: 11px; color: var(--soft); }
+.icard.empty { border-style: dashed; border-color: #ddd0f2; opacity: .7; }
+.icard.empty b { color: var(--soft); }
+.icard.eqd { background: #fbf8ff; }
+.igrid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.idetail { display: flex; gap: 14px; align-items: center; }
+.bigi { position: relative; width: 120px; height: 120px; border-radius: 24px; border: 4px solid var(--tc); background: radial-gradient(#fff, #f6f0ff); font-size: 64px; display: flex; align-items: center; justify-content: center; }
+.bigi i { position: absolute; right: 6px; bottom: 4px; font-style: normal; font-size: 20px; color: var(--tc); }
+.idetail .info { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+.btn.enh { background: linear-gradient(180deg, #ffe58a, #ffc93d); box-shadow: 0 4px 0 #e0a21a; color: #6b4a00; }
+
+.ubar.npc { width: 120px; margin-left: -60px; }
+.ubar.npc .nm { background: rgba(122, 86, 214, .85); color: #fff; border-radius: 10px; padding: 2px 8px; font-size: 12px; text-shadow: none; }
