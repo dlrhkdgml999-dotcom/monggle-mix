@@ -58,7 +58,11 @@ export function animateModel(m, s, dt) {
   // 공격
   if (s.atk > 0) {
     const k = 1 - s.atk / ATK, w = Math.sin(k * Math.PI);
-    if (r.wandArm) { // 주인공: 요술봉 크게 휘두르기
+    if (r.wandArm && s.style === 'shoot') { // 궁수: 활을 앞으로 겨누고 쏘기
+      r.wandArm.rotation.x = -1.5; z = -w * 0.08; yaw = -0.2;
+    } else if (r.wandArm && s.style === 'cast') { // 법사: 요술봉을 앞으로 쭉
+      r.wandArm.rotation.x = -1.2 - w * 0.9; z = w * 0.06; sy *= 1 + w * 0.05;
+    } else if (r.wandArm) { // 전사: 크게 휘두르기
       r.wandArm.rotation.x = -2.6 * Math.sin(Math.min(1, k * 1.6) * Math.PI * 0.5) + 2.2 * Math.max(0, k - 0.6);
       yaw = Math.sin(k * Math.PI) * 0.35; z = w * 0.12;
     } else if (s.ranged) { z = -w * 0.18; sy *= 1 + w * 0.12; sx *= 1 - w * 0.06; pitch -= w * 0.2; }

@@ -165,3 +165,17 @@ export const QUESTS = [
   { text: '도감 모두 채우기', count: s => [Object.keys(s.dex).length, DEX_ORDER.length], done: s => Object.keys(s.dex).length >= DEX_ORDER.length },
 ];
 export const QUEST_REWARD = 10;
+
+// 주인공 직업
+export const JOBS = {
+  warrior: { name: '전사', icon: '⚔️', desc: '검으로 가까이서 싸워요. 체력이 튼튼해요.', hp: 1.3, atk: 1.15, range: 1.8, cd: 0.75, style: 'swing',
+    skill: { name: '회오리 베기', type: 'spin', power: 2.4, radius: 2.8, cd: 8 } },
+  archer: { name: '궁수', icon: '🏹', desc: '활로 멀리서 빠르게 쏴요.', hp: 0.95, atk: 0.95, range: 6, cd: 0.6, style: 'shoot', proj: 'arrow',
+    skill: { name: '화살비', type: 'rain', power: 1.9, radius: 3, cd: 9 } },
+  mage: { name: '법사', icon: '🪄', desc: '마법 별탄으로 멀리서 세게 때려요.', hp: 0.9, atk: 1.25, range: 5, cd: 0.9, style: 'cast', proj: 'star',
+    skill: { name: '별똥별', type: 'meteor', power: 3.6, radius: 2.4, cd: 9 } },
+  thief: { name: '도적', icon: '🗡️', desc: '단검으로 아주 빠르게 찔러요. 가끔 치명타!', hp: 1.0, atk: 0.8, range: 1.6, cd: 0.42, style: 'swing', crit: 0.25,
+    skill: { name: '그림자 찌르기', type: 'dash', power: 3.4, cd: 7 } },
+  pirate: { name: '해적', icon: '🏴‍☠️', desc: '권총으로 중간 거리에서 탕탕 쏴요.', hp: 1.1, atk: 1.05, range: 4.2, cd: 0.7, style: 'shoot', proj: 'bullet',
+    skill: { name: '대포 쾅', type: 'cannon', power: 3.0, radius: 3, cd: 10 } },
+};

@@ -47,7 +47,7 @@ export class Sync {
       const p = u.model.root.position;
       return [u.slot, u.sp, u.data.shiny ? 1 : 0, r1(p.x), r1(p.z), r1(u.face), u.dead ? 1 : 0, u.moving ? 1 : 0, Math.round(u.hp), u.maxHp];
     });
-    this.send({ t: 'p', n: this.state.name, l: this.state.look, lv: this.state.lv,
+    this.send({ t: 'p', n: this.state.name, l: this.state.look, j: this.state.job || 'mage', lv: this.state.lv, a: h.atkT > 0 ? 1 : 0,
       h: [r1(hp.x), r1(hp.z), r1(h.face), h.dead ? 1 : 0, Math.round(h.hp), h.maxHp, h.moving ? 1 : 0], pets });
     if (this.host) {
       const m = g.units.filter(u => u.kind === 'wild' && !u.removed).map(u => {

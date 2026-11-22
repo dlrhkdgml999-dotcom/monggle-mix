@@ -371,7 +371,7 @@ export function makeMonggle(sp, { shiny = false } = {}) {
 
 
 // 주인공: 큰 머리 2등신
-export function makeHero(look = 'boy') {
+export function makeHero(look = 'boy', job = 'mage') {
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
@@ -397,16 +397,7 @@ export function makeHero(look = 'boy') {
     sh.rotation.z = sx * 0.12;
     sh.userData.ph = sx < 0 ? Math.PI : 0; sh.userData.side = sx;
     body.add(sh); rig.arms.push(sh);
-    if (sx > 0) {
-      // 별 요술봉 (오른손)
-      const wand = new THREE.Group();
-      wand.add(cyl(toon(0xc8955a), 0, 0.18, 0, 0.022, 0.36));
-      const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.1, 0), toon(0xffe066, { emissive: 0xffd84d, emissiveIntensity: 0.5 }));
-      star.position.y = 0.4; star.scale.set(1, 1, 0.5); wand.add(star);
-      wand.position.set(0.01, -0.3, 0.06); wand.rotation.x = 0.9;
-      sh.add(wand);
-      rig.wandArm = sh;
-    }
+    if (sx > 0) { sh.add(makeWeapon(job)); rig.wandArm = sh; }
   }
   // 머리: 목 관절
   const head = new THREE.Group(); head.position.set(0, 0.72, 0);
@@ -422,6 +413,7 @@ export function makeHero(look = 'boy') {
     const ah = cone(hair, 0.05, 0.7, 0, 0.05, 0.12); ah.userData.ear = 1; head.add(ah);
   }
   face(head, 0.23, 0.31, 0.13);
+  head.add(makeHat(job, look));
   body.add(head); rig.head = head;
   const m = finishModel(root, body, 'hero');
   Object.assign(m.rig, rig);
@@ -473,6 +465,82 @@ function findRig(body) {
     if (o.userData.ear) rig.ears.push(o);
   });
   return rig;
+}
+
+// 직업별 무기 (오른손)
+function makeWeapon(job) {
+  const w = new THREE.Group();
+  if (job === 'warrior') {
+    w.add(cyl(toon(0x8a5a3a), 0, 0.06, 0, 0.025, 0.14));                 // 손잡이
+    w.add(mesh(new THREE.BoxGeometry(1, 1, 1), toon(0xffd34d), 0, 0.15, 0, 0.18, 0.04, 0.05)); // 가드
+    const blade = mesh(new THREE.BoxGeometry(1, 1, 1), toon(0xe8f0ff, { emissive: 0xbfd8ff, emissiveIntensity: 0.2 }), 0, 0.42, 0, 0.07, 0.5, 0.025);
+    w.add(blade);
+    w.add(cone(toon(0xe8f0ff), 0, 0.71, 0, 0.05, 0.08));
+    w.position.set(0.01, -0.3, 0.05); w.rotation.x = 1.0;
+  } else if (job === 'thief') {
+    w.add(cyl(toon(0x3a2a4a), 0, 0.05, 0, 0.022, 0.12));
+    w.add(mesh(new THREE.BoxGeometry(1, 1, 1), toon(0xb48cff), 0, 0.12, 0, 0.12, 0.03, 0.04));
+    w.add(mesh(new THREE.BoxGeometry(1, 1, 1), toon(0xe8f0ff, { emissive: 0xd0c0ff, emissiveIntensity: 0.25 }), 0, 0.26, 0, 0.05, 0.24, 0.02));
+    w.add(cone(toon(0xe8f0ff), 0, 0.41, 0, 0.035, 0.06));
+    w.position.set(0.01, -0.3, 0.05); w.rotation.x = 1.2;
+  } else if (job === 'pirate') {
+    w.add(mesh(new THREE.BoxGeometry(1, 1, 1), toon(0x8a5a3a), 0, 0, 0, 0.06, 0.14, 0.06));            // 손잡이
+    const barrel = mesh(new THREE.CylinderGeometry(1, 1, 1, 8), toon(0x5a5a6a), 0, 0.08, 0.13, 0.035, 0.28, 0.035);
+    barrel.rotation.x = Math.PI / 2; w.add(barrel);
+    w.add(ball(toon(0xffd34d), 0, 0.08, 0.0, 0.045));
+    w.position.set(0.01, -0.3, 0.04); w.rotation.x = 0.2;
+  } else if (job === 'archer') {
+    const bow = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.022, 6, 20, Math.PI), toon(0xb5763f));
+    bow.rotation.z = Math.PI / 2; w.add(bow);
+    w.add(cyl(toon(0xffffff), 0, 0, 0, 0.004, 0.6));
+    w.add(ball(toon(0x6fcf6a), 0, 0.3, 0, 0.035)); w.add(ball(toon(0x6fcf6a), 0, -0.3, 0, 0.035));
+    w.position.set(0.04, -0.3, 0.12); w.rotation.set(0.2, Math.PI / 2, 0);
+  } else {
+    w.add(cyl(toon(0xc8955a), 0, 0.18, 0, 0.022, 0.36));
+    const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.1, 0), toon(0xffe066, { emissive: 0xffd84d, emissiveIntensity: 0.5 }));
+    star.position.y = 0.4; star.scale.set(1, 1, 0.5); w.add(star);
+    w.position.set(0.01, -0.3, 0.06); w.rotation.x = 0.9;
+  }
+  return w;
+}
+
+// 직업별 모자
+function makeHat(job, look) {
+  const g = new THREE.Group();
+  if (job === 'warrior') {
+    g.add(mesh(new THREE.SphereGeometry(1, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), toon(0xc9d2e0), 0, 0.42, -0.04, 0.41, 0.36, 0.38));
+    g.add(cyl(toon(0xaab4c4), 0, 0.42, -0.04, 0.41, 0.04));
+    const plume = ball(toon(0xff5f6f), 0, 0.82, -0.1, 0.07, 0.14, 0.18); plume.userData.ear = 2; g.add(plume);
+  } else if (job === 'thief') {
+    const hood = toon(0x5a4a7a);
+    g.add(mesh(new THREE.SphereGeometry(1, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), hood, 0, 0.4, -0.06, 0.41, 0.34, 0.37));
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.035, 6, 24), toon(0xb48cff));
+    band.rotation.x = Math.PI / 2; band.position.set(0, 0.47, -0.02); g.add(band);
+    for (const sx of [-1, 1]) { const k = ball(toon(0xb48cff), sx * 0.06, 0.48, -0.38, 0.05, 0.12, 0.03); k.rotation.z = sx * 0.6; k.userData.ear = 4 + sx; g.add(k); }
+  } else if (job === 'pirate') {
+    const hat = toon(0x2e2a3a), gold = toon(0xffd34d);
+    g.add(cyl(hat, 0, 0.55, -0.04, 0.46, 0.05));
+    g.add(mesh(new THREE.SphereGeometry(1, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), hat, 0, 0.56, -0.05, 0.33, 0.26, 0.31));
+    for (const sx of [-1, 1]) { const flap = ball(hat, sx * 0.34, 0.66, -0.04, 0.16, 0.12, 0.3); flap.rotation.z = sx * 0.7; g.add(flap); }
+    g.add(ball(toon(0xffffff), 0, 0.7, 0.24, 0.07, 0.07, 0.03));
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.02, 6, 24), gold);
+    ring.rotation.x = Math.PI / 2; ring.position.set(0, 0.58, -0.05); g.add(ring);
+    const fe = ball(toon(0xff5f6f), -0.24, 0.84, -0.1, 0.04, 0.17, 0.06); fe.rotation.z = 0.6; fe.userData.ear = 6; g.add(fe);
+  } else if (job === 'archer') {
+    const hood = toon(0x5cbf6a);
+    g.add(mesh(new THREE.SphereGeometry(1, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), hood, 0, 0.4, -0.06, 0.41, 0.34, 0.37));
+    const tip = cone(hood, 0, 0.74, -0.22, 0.12, 0.3); tip.rotation.x = -0.9; g.add(tip);
+    const f = ball(toon(0xff8fa3), 0.22, 0.66, -0.12, 0.03, 0.16, 0.05); f.rotation.z = -0.5; f.userData.ear = 3; g.add(f);
+  } else {
+    const hat = toon(look === 'girl' ? 0xb48cff : 0x7a56d6);
+    g.add(cyl(hat, 0, 0.52, -0.04, 0.5, 0.04));
+    const c = cone(hat, 0, 0.86, -0.08, 0.27, 0.66); c.rotation.x = -0.18; g.add(c);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.035, 6, 20), toon(0xffd34d));
+    band.rotation.x = Math.PI / 2; band.position.set(0, 0.57, -0.05); g.add(band);
+    const st = new THREE.Mesh(new THREE.OctahedronGeometry(0.06, 0), toon(0xfff27a, { emissive: 0xffd34d, emissiveIntensity: 0.6 }));
+    st.position.set(0.12, 0.78, 0.14); g.add(st);
+  }
+  return g;
 }
 
 function finishModel(root, body, kind) {

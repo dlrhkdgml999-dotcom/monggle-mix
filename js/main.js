@@ -109,7 +109,8 @@ function begin(s) {
   net.start(state);
   if (params.get('fake')) fakeLink(params.get('fake'));
   if (params.get('fakedb')) import('./fakedb.js').then(m => net.startWith(m.makeFakeDb('fake-' + params.get('fakedb')), null, 'fake-' + params.get('fakedb')));
-  ui.toast(`어서 와요, ${state.name}! 땅을 누르면 걸어가고, 몽글이를 누르면 같이 싸워요`);
+  if (!state.job) setTimeout(() => ui.openJob(true), 600);
+  else ui.toast(`어서 와요, ${state.name}! 땅을 누르면 걸어가고, 몽글이를 누르면 같이 싸워요`);
   save(state);
   window.__game = game; window.__net = net; game.ui = ui; // 디버그용
 }
@@ -157,7 +158,7 @@ function fakeLink(side) {
 let partner = null;
 function partnerSource() {
   const sp = sync?.partner;
-  if (sp) return { name: sp.n, look: sp.l, x: sp.h[0], z: sp.h[1], face: sp.h[2], dead: sp.h[3],
+  if (sp) return { name: sp.n, look: sp.l, job: sp.j, atk: sp.a, x: sp.h[0], z: sp.h[1], face: sp.h[2], dead: sp.h[3],
     party: sp.pets.map(q => ({ sp: q[1], shiny: !!q[2] })), pets: sp.pets };
   return net?.partner();
 }
@@ -167,12 +168,12 @@ function updatePartner(dt) {
     if (partner) { scene.remove(partner.model.root); partner.pets.forEach(q => scene.remove(q.model.root)); ui.detachPartner(); partner = null; }
     return;
   }
-  if (!partner || partner.look !== p.look) {
+  if (!partner || partner.look !== p.look || partner.job !== (p.job || 'mage')) {
     if (partner) { scene.remove(partner.model.root); partner.pets.forEach(q => scene.remove(q.model.root)); }
-    const model = makeHero(p.look || 'girl');
+    const model = makeHero(p.look || 'girl', p.job || 'mage');
     model.root.position.set(p.x, 0, p.z);
     scene.add(model.root);
-    partner = { model, look: p.look, t: 0, pets: [], petKey: '' };
+    partner = { model, look: p.look, job: p.job || 'mage', t: 0, pets: [], petKey: '' };
     ui.attachPartner(model, p.name);
   }
   // 상대 몽글이
@@ -196,7 +197,10 @@ function updatePartner(dt) {
     partner.model.root.rotation.y = p.face ?? Math.atan2(dx, dz);
   }
   partner.t += dt;
-  animateModel(partner.model, { t: partner.t, moving: d > 0.08 }, dt);
+  if (p.atk && !(partner.atkT > 0)) partner.atkT = 0.32;
+  if (partner.atkT > 0) partner.atkT -= dt;
+  const style = { warrior: 'swing', archer: 'shoot', mage: 'cast', thief: 'swing', pirate: 'shoot' }[partner.job];
+  animateModel(partner.model, { t: partner.t, moving: d > 0.08, atk: partner.atkT, style }, dt);
   const n = partner.pets.length, face = partner.model.root.rotation.y;
   if (p.pets) {
     // 같이 사냥 중: 상대 몽글이의 실제 위치

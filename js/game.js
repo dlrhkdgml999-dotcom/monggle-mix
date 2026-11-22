@@ -1,6 +1,6 @@
 // 몽글믹스 — 게임 핵심 (주인공·몽글이·야생 몽글이·전투·포획)
 import * as THREE from '../lib/three.min.js';
-import { SPECIES, ZONES, elemMult, expToNext, MAX_LV, BOX_MAX, CAPTURE_RATE, CAPTURE_RATE_NEW, QUESTS, QUEST_REWARD } from './data.js';
+import { SPECIES, ZONES, elemMult, expToNext, MAX_LV, BOX_MAX, CAPTURE_RATE, CAPTURE_RATE_NEW, QUESTS, QUEST_REWARD, JOBS } from './data.js';
 import { makeMonggle, makeHero, toon } from './models.js';
 import { clampToWorld, SPAWN, CAULDRON } from './world.js';
 import { sfx } from './sfx.js';
@@ -14,7 +14,10 @@ const V = new THREE.Vector3();
 const rand = (a, b) => a + Math.random() * (b - a);
 const dist2 = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
-export function heroStats(lv) { return { maxHp: Math.round(100 + lv * 12), atk: 10 + lv * 2.2 }; }
+export function heroStats(lv, job = 'mage') {
+  const J = JOBS[job] || JOBS.mage;
+  return { maxHp: Math.round((100 + lv * 12) * J.hp), atk: (10 + lv * 2.2) * J.atk };
+}
 export function petStats(m) {
   const s = SPECIES[m.sp], k = 1 + (m.lv - 1) * 0.12, sh = m.shiny ? 1.1 : 1;
   return { maxHp: Math.round(s.hp * k * sh), atk: s.atk * k * sh };
@@ -91,11 +94,13 @@ export class Game {
   }
 
   spawnHero() {
-    const st = heroStats(this.state.lv);
-    const model = makeHero(this.state.look);
+    const job = this.state.job || 'mage';
+    const J = JOBS[job];
+    const st = heroStats(this.state.lv, job);
+    const model = makeHero(this.state.look, job);
     model.root.position.set(SPAWN.x, 0, SPAWN.z);
     this.hero = this.addUnit({
-      kind: 'hero', name: this.state.name, model, elems: [], range: 1.7, speed: 5,
+      kind: 'hero', name: this.state.name, model, elems: [], range: J.range, speed: 5, job, atkRate: J.cd,
       hp: st.maxHp, maxHp: st.maxHp, atk: st.atk, atkCd: 0, target: null, moveTo: null,
       buffs: {}, dead: false, face: 0,
     });
@@ -111,6 +116,18 @@ export class Game {
       range: s.range, speed: s.speed + 1, hp: st.maxHp, maxHp: st.maxHp, atk: st.atk,
       atkCd: rand(0, 1), skillCd: 0, target: null, slot, buffs: {}, dead: false, reviveT: 0, face: 0,
     });
+  }
+
+  // 직업 바꾸기 (모습·능력치 다시 만들기)
+  setJob(job) {
+    const old = this.hero, pos = old.model.root.position.clone(), face = old.face;
+    this.state.job = job;
+    this.removeUnit(old);
+    this.spawnHero();
+    this.hero.model.root.position.copy(pos); this.hero.face = face;
+    for (const u of this.units) if (u.target === old) u.target = null;
+    this.jobSkillCd = 0;
+    this.burst(pos, 0xfff27a, 16);
   }
 
   partySize() { return this.state.lv >= 15 ? 3 : 2; }
@@ -467,18 +484,37 @@ export class Game {
     }
   }
 
-  shoot(from, to, mult, color, big = false) {
+  shoot(from, to, mult, color, big = false, kind = 'ball', onHit = null) {
     if (from.kind !== 'wild') sfx.shoot();
-    const m = new THREE.Mesh(new THREE.SphereGeometry(big ? 0.25 : 0.14, 10, 8),
-      toon(color, { emissive: color, emissiveIntensity: 0.6 }));
-    m.position.copy(from.model.root.position).add(V.set(0, 0.6, 0));
+    let m;
+    if (kind === 'arrow') {
+      m = new THREE.Group();
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.6, 5), toon(0xb5763f)); shaft.rotation.x = Math.PI / 2; m.add(shaft);
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.12, 6), toon(0xdfe6f0)); tip.rotation.x = Math.PI / 2; tip.position.z = 0.34; m.add(tip);
+      const fl = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.01, 0.12), toon(0xff8fa3)); fl.position.z = -0.28; m.add(fl);
+    } else if (kind === 'bullet') {
+      m = new THREE.Mesh(new THREE.SphereGeometry(big ? 0.28 : 0.08, 8, 6), toon(big ? 0x3a3a4a : 0xffe066, { emissive: big ? 0x000000 : 0xffb347, emissiveIntensity: 0.5 }));
+    } else if (kind === 'star') {
+      m = new THREE.Mesh(new THREE.OctahedronGeometry(big ? 0.3 : 0.16, 0), toon(color, { emissive: 0xffd34d, emissiveIntensity: 0.8 }));
+    } else {
+      m = new THREE.Mesh(new THREE.SphereGeometry(big ? 0.25 : 0.14, 10, 8), toon(color, { emissive: color, emissiveIntensity: 0.6 }));
+    }
+    m.position.copy(from.model.root.position).add(V.set(0, 0.7, 0));
     this.scene.add(m);
-    this.projectiles.push({ m, from, to, mult, speed: 12 });
+    this.projectiles.push({ m, from, to, mult, speed: kind === 'arrow' || kind === 'bullet' ? (big ? 12 : 24) : 12, kind, onHit });
   }
 
   attack(u, t) {
     u.face = Math.atan2(t.model.root.position.x - u.model.root.position.x, t.model.root.position.z - u.model.root.position.z);
     u.atkT = ATTACK_TIME;
+    if (u.kind === 'hero') {
+      const J = JOBS[u.job] || JOBS.mage;
+      if (J.proj === 'arrow') { this.shoot(u, t, 1, 0xffffff, false, 'arrow'); return; }
+      if (J.proj === 'star') { this.shoot(u, t, 1, 0xfff27a, false, 'star'); return; }
+      if (J.proj === 'bullet') { this.shoot(u, t, 1, 0x3a3a4a, false, 'bullet'); return; }
+      if (J.crit && Math.random() < J.crit) { this.damage(u, t, 2); this.ui.floatText(t.model.root.position, '치명타!', 'big', 0.6); return; }
+      this.damage(u, t); return;
+    }
     if (u.range > 3) {
       const col = u.elems[0] === 'fire' ? 0xff9a4d : u.elems[0] === 'water' ? 0x6cc4ff : 0xa6e36a;
       this.shoot(u, t, 1, col);
@@ -558,7 +594,7 @@ export class Game {
     s.exp += n;
     while (s.lv < MAX_LV && s.exp >= expToNext(s.lv)) {
       s.exp -= expToNext(s.lv); s.lv++;
-      const st = heroStats(s.lv);
+      const st = heroStats(s.lv, s.job);
       this.hero.maxHp = st.maxHp; this.hero.atk = st.atk; this.hero.hp = st.maxHp;
       this.ui.floatText(this.hero.model.root.position, `Lv ${s.lv}!`, 'lvup', 1.2);
       sfx.levelUp(); this.burst(this.hero.model.root.position, 0xfff27a, 14);
@@ -665,6 +701,68 @@ export class Game {
     return true;
   }
 
+  jobSkill() {
+    const h = this.hero;
+    if (this.jobSkillCd > 0 || h.dead) return false;
+    const J = JOBS[h.job] || JOBS.mage, sk = J.skill;
+    const hp = h.model.root.position;
+    const hitAround = (c, r, pow) => {
+      let n = 0;
+      for (const o of this.units) if (o.kind === 'wild' && !o.dead && dist2(o.model.root.position, c) < r + (o.radius || 0)) { this.damage(h, o, pow); n++; }
+      return n;
+    };
+    if (sk.type === 'dash') {
+      const t = (h.target && !h.target.dead && h.target.kind === 'wild') ? h.target : this.nearestEnemy(h, 9);
+      if (!t) { this.ui.toast('근처에 상대가 없어요'); return false; }
+      h.target = t;
+      this.burst(hp, 0x5a4a7a, 8);
+      this.dashTo(h, t);
+      h.face = Math.atan2(t.model.root.position.x - hp.x, t.model.root.position.z - hp.z);
+      this.damage(h, t, sk.power);
+      this.ui.floatText(t.model.root.position, '치명타!', 'big', 0.6);
+      this.burst(t.model.root.position, 0xb48cff, 10);
+    } else if (sk.type === 'cannon') {
+      const t = (h.target && !h.target.dead && h.target.kind === 'wild') ? h.target : this.nearestEnemy(h, 10);
+      if (!t) { this.ui.toast('근처에 상대가 없어요'); return false; }
+      h.target = t;
+      h.face = Math.atan2(t.model.root.position.x - hp.x, t.model.root.position.z - hp.z);
+      this.shoot(h, t, sk.power, 0x3a3a4a, true, 'bullet', () => {
+        hitAround(t.model.root.position, sk.radius, sk.power);
+        this.ui.ring(t.model.root.position, '#ffb36b', sk.radius);
+        this.burst(t.model.root.position, 0xffb36b, 18);
+      });
+    } else if (sk.type === 'spin') {
+      hitAround(hp, sk.radius, sk.power);
+      this.ui.ring(hp, '#ffffff', sk.radius);
+      this.burst(hp, 0xe8f0ff, 12);
+      h.spinT = 0.45;
+    } else {
+      const t = (h.target && !h.target.dead && h.target.kind === 'wild') ? h.target : this.nearestEnemy(h, 10);
+      if (!t) { this.ui.toast('근처에 상대가 없어요'); return false; }
+      h.target = t;
+      h.face = Math.atan2(t.model.root.position.x - hp.x, t.model.root.position.z - hp.z);
+      const c = t.model.root.position.clone();
+      if (sk.type === 'rain') {
+        for (let i = 0; i < 6; i++) setTimeout(() => {
+          const a = Math.random() * 6.28, d = Math.random() * sk.radius * 0.8;
+          this.burst({ x: c.x + Math.cos(a) * d, z: c.z + Math.sin(a) * d }, 0xffffff, 3);
+        }, i * 70);
+        setTimeout(() => { hitAround(c, sk.radius, sk.power); this.ui.ring(c, '#bfffc8', sk.radius); }, 250);
+      } else {
+        this.shoot(h, t, sk.power, 0xfff27a, true, 'star', () => {
+          hitAround(t.model.root.position, sk.radius, sk.power);
+          this.ui.ring(t.model.root.position, '#fff27a', sk.radius);
+          this.burst(t.model.root.position, 0xfff27a, 16);
+        });
+      }
+    }
+    h.atkT = ATTACK_TIME;
+    this.jobSkillCd = sk.cd;
+    sfx.skill();
+    this.ui.floatText(hp, sk.name, 'skill', 0.9);
+    return true;
+  }
+
   dashTo(u, t) {
     const a = u.model.root.position, b = t.model.root.position;
     const d = dist2(a, b);
@@ -676,6 +774,7 @@ export class Game {
     this.time += dt;
     if (this.buffAtk > 0) this.buffAtk -= dt;
     if (this.heroSkillCd > 0) this.heroSkillCd -= dt;
+    if (this.jobSkillCd > 0) this.jobSkillCd -= dt;
     if (this.shieldT > 0) this.shieldT -= dt;
     if (this.bossT > 0 && this.mode !== 'guest') { this.bossT -= dt; if (this.bossT <= 0) { this.spawnBoss(); this.ui.toast('🍄 말랑 들판 끝에 대왕버섯이 나타났어요!'); } }
 
@@ -699,9 +798,14 @@ export class Game {
       V.set(tgt.x, 0.6, tgt.z).sub(p.m.position);
       const d = V.length();
       if (d < 0.4 || p.to.dead || p.to.removed) {
-        if (!p.to.dead && !p.to.removed) this.damage(p.from, p.to, p.mult);
+        if (!p.to.dead && !p.to.removed) { if (p.onHit) p.onHit(); else this.damage(p.from, p.to, p.mult); }
+        if (p.kind === 'star') this.burst(p.m.position, 0xfff27a, 5);
         this.scene.remove(p.m); this.projectiles.splice(this.projectiles.indexOf(p), 1);
-      } else p.m.position.addScaledVector(V.normalize(), Math.min(d, p.speed * dt));
+      } else {
+        if (p.kind === 'arrow') p.m.lookAt(tgt.x, 0.6, tgt.z);
+        if (p.kind === 'star') p.m.rotation.y += dt * 10;
+        p.m.position.addScaledVector(V.normalize(), Math.min(d, p.speed * dt));
+      }
     }
     // 반짝가루 보석
     const hp1 = this.hero.model.root.position;
@@ -772,7 +876,7 @@ export class Game {
     if (h.target && (h.target.dead || h.target.removed || h.target.kind !== 'wild')) h.target = null;
     if (h.target) {
       const tp = h.target.model.root.position;
-      if (this.moveToward(h, tp.x, tp.z, dt, h.range + (h.target.radius || 0)) && h.atkCd <= 0) { this.attack(h, h.target); h.atkCd = 0.75; }
+      if (this.moveToward(h, tp.x, tp.z, dt, h.range + (h.target.radius || 0)) && h.atkCd <= 0) { this.attack(h, h.target); h.atkCd = h.atkRate || 0.75; }
     } else if (h.moveTo) {
       if (this.moveToward(h, h.moveTo.x, h.moveTo.z, dt, 0.15)) h.moveTo = null;
     } else h.moving = false;
@@ -887,9 +991,11 @@ export class Game {
     m.root.rotation.y += df * Math.min(1, dt * 10);
     if (u.dead && u.kind === 'hero') { m.root.rotation.z = Math.min(1.4, m.root.rotation.z + dt * 4); return; }
     if (u.atkT > 0) u.atkT -= dt;
+    if (u.spinT > 0) { u.spinT -= dt; m.root.rotation.y += dt * 28; }
     if (u.hurtT > 0) { u.hurtT -= dt; m.flash(true); if (u.hurtT <= 0) m.flash(false); }
     animateModel(m, {
       t, moving: u.moving || u.kind === 'friend', atk: u.atkT, ranged: u.range > 3 && u.kind !== 'hero',
+      style: u.kind === 'hero' ? (JOBS[u.job] || JOBS.mage).style : null,
       hurt: u.hurtT,
     }, dt);
   }

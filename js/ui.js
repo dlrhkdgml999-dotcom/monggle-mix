@@ -1,8 +1,8 @@
 // 몽글믹스 — 화면 UI (상단 정보, 스킬 버튼, 가방, 도감, 믹스 솥)
 import * as THREE from '../lib/three.min.js';
-import { SPECIES, ELEM, DEX_ORDER, mixResult, mixMinLv, MIX_COST, MIX_MIN_LV, BOX_MAX, expToNext, MAX_LV, QUESTS } from './data.js';
+import { SPECIES, ELEM, DEX_ORDER, mixResult, mixMinLv, MIX_COST, MIX_MIN_LV, BOX_MAX, expToNext, MAX_LV, QUESTS, JOBS } from './data.js';
 import { BOUNDS } from './world.js';
-import { makeMonggle } from './models.js';
+import { makeMonggle, makeHero } from './models.js';
 import { sfx, isMuted, setMuted } from './sfx.js';
 import { newSave } from './save.js';
 
@@ -11,6 +11,19 @@ const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) 
 
 // ---------- 몽글이 초상화 (3D를 작은 그림으로) ----------
 const iconCache = {};
+export function heroIcon(look, job) {
+  const key = 'hero-' + look + '-' + job;
+  if (iconCache[key]) return iconCache[key];
+  icon('bulssi'); // 렌더러 준비
+  const m = makeHero(look, job);
+  m.shadow.visible = false; m.root.rotation.y = -0.4;
+  iconScene.add(m.root);
+  iconCam.position.set(0.5, 1.3, 3.4); iconCam.lookAt(0, 0.75, 0);
+  iconR.render(iconScene, iconCam);
+  iconCache[key] = iconR.domElement.toDataURL();
+  iconScene.remove(m.root);
+  return iconCache[key];
+}
 let iconR = null, iconScene, iconCam;
 export function icon(sp, shiny = false) {
   const key = sp + (shiny ? '*' : '');
@@ -112,7 +125,7 @@ export class UI {
   renderTop() {
     const s = this.state, g = this.game;
     $('#meName').textContent = s.name;
-    $('#meLv').textContent = 'Lv ' + s.lv;
+    $('#meLv').textContent = `${(JOBS[s.job] || JOBS.mage).icon} Lv ${s.lv}`;
     $('#dust b').textContent = s.dust;
     if (g) {
       $('#meHp').style.width = (g.hero.hp / g.hero.maxHp * 100) + '%';
@@ -151,6 +164,10 @@ export class UI {
     const hb = h('button', 'skill hero', `<span class="ic">📣</span><small>응원</small><i class="cd"></i>`);
     hb.onpointerdown = e => { e.stopPropagation(); if (this.game.heroSkill()) this.pulse(hb); else this.shake(hb); };
     box.appendChild(hb);
+    const J = JOBS[this.state.job] || JOBS.mage;
+    const jb = h('button', 'skill job', `<span class="ic">${J.icon}</span><small>${J.skill.name}</small><i class="cd"></i>`);
+    jb.onpointerdown = e => { e.stopPropagation(); if (this.game.jobSkill()) this.pulse(jb); else this.shake(jb); };
+    box.appendChild(jb);
     for (let i = 0; i < this.game.partySize(); i++) {
       const u = this.game.units.find(x => x.kind === 'pet' && x.slot === i);
       if (!u) continue;
@@ -178,6 +195,7 @@ export class UI {
       const cd = b.querySelector('.cd');
       let left = 0, total = 1;
       if (b.classList.contains('hero')) { left = g.heroSkillCd; total = 15; }
+      else if (b.classList.contains('job')) { left = g.jobSkillCd || 0; total = (JOBS[this.state.job] || JOBS.mage).skill.cd; }
       else { const u = g.units.find(x => x.kind === 'pet' && x.slot === +b.dataset.slot); if (u) { left = u.dead ? 99 : u.skillCd; total = SPECIES[u.sp].skill.cd; } }
       cd.style.height = Math.max(0, Math.min(1, left / total)) * 100 + '%';
       b.classList.toggle('ready', left <= 0);
@@ -444,6 +462,9 @@ export class UI {
     grid.innerHTML = s.monggles.map(m => this.monCard(m)).join('');
     b.appendChild(grid);
     b.appendChild(h('p', 'hint', '몽글이를 누르면 자세히 보고, 데리고 다닐지 정할 수 있어요.'));
+    const jbtn = h('button', 'btn ghost giftDust', `${(JOBS[s.job] || JOBS.mage).icon} 직업 바꾸기 (지금: ${(JOBS[s.job] || JOBS.mage).name})`);
+    jbtn.onclick = () => (this.game.zoneAt(this.game.hero.model.root.position)?.safe ? this.openJob() : this.toast('직업은 솥단지 마을에서 바꿀 수 있어요'));
+    b.appendChild(jbtn);
     const gd = h('button', 'btn ghost giftDust', '🎁 반짝가루 10개 선물하기');
     gd.onclick = () => this.giftDust();
     b.appendChild(gd);
@@ -451,6 +472,31 @@ export class UI {
     rs.onclick = () => this.confirmReset();
     b.appendChild(rs);
     grid.onclick = e => { const c = e.target.closest('.mcard'); if (c) this.openMon(+c.dataset.id); };
+  }
+
+  // ---------- 직업 고르기 ----------
+  openJob(first = false) {
+    const s = this.state;
+    const b = this.openPanel(first ? '어떤 모험가가 될까요?' : '직업 바꾸기');
+    const grid = h('div', 'jobs');
+    grid.innerHTML = Object.entries(JOBS).map(([k, J]) => `
+      <button class="jobCard ${s.job === k ? 'on' : ''}" data-job="${k}">
+        <img src="${heroIcon(s.look, k)}"><b>${J.icon} ${J.name}</b><small>${J.desc}</small>
+        <span class="sk">기술: ${J.skill.name}</span></button>`).join('');
+    b.appendChild(grid);
+    if (first) b.appendChild(h('p', 'hint', '마을에서 언제든 다시 바꿀 수 있어요 (가방 → 직업 바꾸기)'));
+    grid.onclick = e => {
+      const c = e.target.closest('.jobCard'); if (!c) return;
+      const job = c.dataset.job;
+      if (job !== s.job || first) {
+        this.game.setJob(job);
+        this.renderSkills(); this.renderTop(); this.save();
+        this.net?.writePresence?.();
+        sfx.levelUp();
+        this.toast(`${JOBS[job].icon} ${JOBS[job].name}가 됐어요!`);
+      }
+      this.closePanel();
+    };
   }
 
   // ---------- 선물 ----------

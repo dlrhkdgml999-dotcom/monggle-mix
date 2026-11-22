@@ -242,3 +242,12 @@ button { font-family: inherit; color: inherit; border: 0; cursor: pointer; }
 
 .giftDust { display: block; margin: 10px auto 0; font-size: 14px; padding: 7px 14px; }
 .gmsg { font-size: 17px; color: #d9608f; margin: 6px 0; }
+
+.jobs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.jobCard { background: #fff; border-radius: 18px; padding: 8px; display: flex; flex-direction: column; align-items: center; gap: 2px; border: 3px solid transparent; box-shadow: 0 2px 8px rgba(90, 60, 130, .1); }
+.jobCard.on { border-color: var(--lilac); }
+.jobCard img { width: 100px; height: 100px; }
+.jobCard b { font-size: 18px; }
+.jobCard small { font-size: 11px; color: var(--soft); min-height: 30px; line-height: 1.2; }
+.jobCard .sk { font-size: 12px; background: #f4eefc; border-radius: 8px; padding: 1px 8px; }
+@media (max-height: 420px) { .jobCard img { width: 76px; height: 76px; } }

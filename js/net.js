@@ -112,7 +112,7 @@ export class Net {
     this.meRef = ref(this.db, 'presence/' + this.uid);
     this.writePresence = () => set(this.meRef, {
       name: state.name, look: state.look, mic: this.mic, t: serverTimestamp(), party: this.partyList(),
-      ...(this.lx != null ? { x: this.lx, z: this.lz } : {}), lv: state.lv, v: VERSION,
+      ...(this.lx != null ? { x: this.lx, z: this.lz } : {}), lv: state.lv, v: VERSION, job: state.job || 'mage',
     }).catch(() => {});
     onValue(ref(this.db, '.info/connected'), snap => {
       if (!snap.val()) return;
